@@ -19,3 +19,5 @@ __pycache__/
 
 # local archive: retired docs, kept on this machine only (see docs/TASKLIST.md)
 /archive/
+build-artifacts/
+*.apk
