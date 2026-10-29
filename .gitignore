@@ -1,0 +1,21 @@
+# build output and caches
+client/build/
+client/.dart_tool/
+client/.flutter-plugins*
+client/android/.gradle/
+client/android/local.properties
+server/node_modules/
+server/.wrangler/
+**/.DS_Store
+# raw inputs too large or licence-unclear for the repo
+moon_assets/raw/
+# local model files and tool caches
+*.onnx
+*.bin
+client/gpu/build/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# local archive: retired docs, kept on this machine only (see docs/TASKLIST.md)
+/archive/
