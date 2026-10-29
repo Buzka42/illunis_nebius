@@ -7,7 +7,7 @@ Built for the Nebius submission. Brain and experts run on Nebius Token Factory. 
 
 ## What is here
 
-- `server/`: a Cloudflare Worker (TypeScript-free JavaScript, Node test runner).
+- `server/`: a Cloudflare Worker (JavaScript, Node test runner).
   - `src/council/`: the council relay (brain) and expert registry.
   - `src/knowledge/`: retrieval over Vectorize, embeddings on Nebius (Qwen3-Embedding-8B, 1024 dimensions).
   - `src/providers/tavily.js`, `src/council/web.js`: Tavily web search (expert checks, food checks).
