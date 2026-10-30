@@ -9,7 +9,7 @@ import { notConfigured } from "../council/provider.js";
 import { chatBody, postJson, readCompletion } from "../providers/chat.js";
 import { EFFORT_PREFS, LOG_KINDS, NEEDS_CHOICE, envelope, validateEntry } from "./schemas.js";
 import { searchTavily, tavilyConfigProblem } from "../providers/tavily.js";
-import { estimateFood, foodCheck } from "./food-check.js";
+import { estimateFood, extractPer100, foodCheck } from "./food-check.js";
 
 export const MAX_LOG_TEXT = 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -81,8 +81,8 @@ const parseJson = (s) => {
 
 // Food check (C6): runs only for food with a kcal figure, and only when Tavily is configured and allowed.
 // A mismatch returns ok:false with the choice (nothing is saved until the user picks); otherwise ok:true + check.
-async function checkedFood(kind, date, entry, searchFn) {
-  const rows = await foodCheck(entry, searchFn);
+async function checkedFood(kind, date, entry, searchFn, extractFn) {
+  const rows = await foodCheck(entry, searchFn, extractFn);
   const mismatches = rows.filter((r) => r.status === "mismatch");
   if (mismatches.length) {
     return {
@@ -129,8 +129,10 @@ export async function runLogParse(body, env = {}, deps = {}) {
   const search = searchFn ?? ((q) => searchTavily(q, env, { fetchFn, timeoutMs: 8000, maxResults: 3, role: "log" }));
   // Foods without a stated figure get a labelled estimate from the same search (estimateFood), then the stated
   // figures are checked as before.
-  if (kind === "food" && tavilyOn) await estimateFood(result.entry, search);
+  // Gram and millilitre figures are read by the model and checked against the snippet text (extractPer100).
+  const extractFn = (item, results) => extractPer100(item, results, (messages) => callFn(messages, env, { fetchFn }));
+  if (kind === "food" && tavilyOn) await estimateFood(result.entry, search, extractFn);
   const hasKcal = kind === "food" && result.entry.items.some((it) => it.kcal !== undefined && !it.kcal_estimated);
-  if (hasKcal && tavilyOn) return checkedFood(kind, date, result.entry, search);
+  if (hasKcal && tavilyOn) return checkedFood(kind, date, result.entry, search, extractFn);
   return { status: 200, body: { ok: true, ...envelope(kind, date, result.entry) }, code: null };
 }

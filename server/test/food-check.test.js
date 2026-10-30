@@ -13,7 +13,19 @@ const ENV = { NEBIUS_API_KEY: NB_KEY, LOG_LLM_MODEL: "synthetic/log-model", TAVI
 const noNet = () => { throw new Error("network touched"); };
 
 // Fake model returning `output` as JSON.
-const callFn = (output) => async () => ({ content: JSON.stringify(output), tool_calls: [] });
+// Fake model: a parse request gets `output`; an extraction request (kcal_per_100) gets the first calorie figure in the
+// snippets, the way a careful model would, with its snippet index.
+const callFn = (output) => async (messages) => {
+  if (String(messages?.[0]?.content ?? "").includes("kcal_per_100")) {
+    const { snippets } = JSON.parse(messages[1].content);
+    for (const { index, text } of snippets) {
+      const m = /(\d+(?:\.\d+)?)\s*(?:kcal|calories)/i.exec(text);
+      if (m) return { content: JSON.stringify({ kcal_per_100: Number(m[1]), snippet: index }), tool_calls: [] };
+    }
+    return { content: JSON.stringify({ kcal_per_100: null, snippet: null }), tool_calls: [] };
+  }
+  return { content: JSON.stringify(output), tool_calls: [] };
+};
 
 // Fake Tavily: `hits(query)` gives the results for a query; every call is recorded.
 function tavily({ hits = () => [], status = null, throws = false } = {}) {
@@ -199,4 +211,25 @@ test("food check: the kcal figure must be near the per-100 g basis, not a per-cu
   const content = "White rice, cooked Calories: 205 in 1 cup (158 g). Nutrition per 100 g: 130 calories.";
   const out = await foodCheck(entry, async () => ({ answer: "", results: [{ title: "Rice", url: "https://example.test/r", content }] }));
   assert.equal(out[0].status, "match");
+});
+
+// Live check 2026-10-30: a per-banana figure next to a "100 g" mention must not be used as a per-100 g figure.
+test("food check: a per-banana or per-piece figure is not a per-100 g figure, even with 100 g nearby", async () => {
+  const entry = { items: [{ name: "banana", quantity: 120, unit: "g", kcal: 400 }] };
+  const content = "A medium banana has 66 kcal. The fruit itself is 89 calories per 100 g of edible flesh.";
+  const out = await foodCheck(entry, async () => ({ answer: "", results: [{ title: "Banana", url: "https://example.test/b", content }] }));
+  assert.equal(out[0].status, "mismatch");
+  assert.equal(out[0].found_value, 107);
+});
+
+// Model extraction (2026-10-30): the number must really appear in the snippet the model names.
+test("model extraction: a figure that is not in the named snippet is rejected (unverified)", async () => {
+  const { extractPer100 } = await import("../src/logs/food-check.js");
+  const item = { name: "banana", quantity: 120, unit: "g" };
+  const liar = async () => ({ content: JSON.stringify({ kcal_per_100: 89, snippet: 0 }) });
+  const hit = await extractPer100(item, [{ title: "B", url: "https://e.test/b", content: "A medium banana has 66 kcal." }], liar);
+  assert.equal(hit, null);
+  const good = async () => ({ content: JSON.stringify({ kcal_per_100: 89, snippet: 0 }) });
+  const ok = await extractPer100(item, [{ title: "B", url: "https://e.test/b", content: "Banana: 89 kcal per 100 g." }], good);
+  assert.equal(ok.value, 107);
 });
