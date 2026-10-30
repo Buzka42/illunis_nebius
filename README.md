@@ -3,7 +3,10 @@
 An expert council for wellbeing questions, where every point cites a named source, and every calorie figure a user
 states is checked on the web before it is kept.
 
-Built for the Nebius submission. Brain and experts run on Nebius Token Factory. Verification runs on Tavily.
+Built for the Nebius submission. Brain and experts run on Nebius Token Factory, on NVIDIA Nemotron open models: Nemotron 3 Ultra writes the replies and
+Nemotron 3 Super runs the council. Verification runs on Tavily. Embeddings use Qwen3-Embedding-8B on Nebius.
+
+Licence: code is MIT (see `LICENSE`); knowledge notes keep their own licence per file (see below).
 
 ## What is here
 
@@ -21,7 +24,7 @@ Built for the Nebius submission. Brain and experts run on Nebius Token Factory. 
 ## Run the tests
 
 ```
-cd server && npm install && npm test          # 363 tests
+cd server && npm install && npm test          # 386 tests
 node ../content/validate.mjs                  # 30 content files
 cd ../client && flutter test                  # widget and unit tests
 ```
@@ -46,5 +49,6 @@ Full notes in `server/docs/SETUP.md`. Live checks: `node server/scripts/check-de
 
 ## Licences
 
+Code: MIT, see `LICENSE`.
 Knowledge notes carry their own licence per file (NHS content under the Open Government Licence, MedlinePlus public domain).
 Moon imagery: NASA SVS, see `client/assets/` attribution. Line-art style for diagrams is inspired by Krbn (MIT).
