@@ -669,8 +669,10 @@ class _IllunisRootState extends State<IllunisRoot> {
                   key: ValueKey(caption),
                   text: caption,
                   fog: c.fogEnabled,
-                  // Dark ink on day sky, pale ink at night.
+                  // The ink of the sky behind the text once it has been
+                  // looked at (_probe); until then from the sun.
                   ink: CaptionInk.forDaylight(_scene.skyInkBlend),
+                  followSky: true,
                 ),
               ),
             if (widget.chat case final chat?)

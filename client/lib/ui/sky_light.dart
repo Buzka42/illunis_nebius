@@ -58,6 +58,11 @@ class SkyLight extends InheritedWidget {
     return daylight >= 0.5 ? GlassSpec.modelDay : GlassSpec.modelNight;
   }
 
+  /// The same sky with [palette] in use below it: a text region whose ink
+  /// was chosen from the sky behind it ([SkyInk]).
+  SkyLight withPalette(Palette palette, Widget child) =>
+      SkyLight(daylight: daylight, palette: palette, discs: discs, probe: probe, child: child);
+
   @override
   bool updateShouldNotify(SkyLight old) =>
       daylight != old.daylight || palette != old.palette || probe != old.probe || !_sameRects(discs, old.discs);
@@ -68,6 +73,39 @@ class SkyLight extends InheritedWidget {
       if (a[i] != b[i]) return false;
     }
     return true;
+  }
+}
+
+/// WCAG 2.2 contrast of [ink] over a sky of relative luminance [sky].
+double contrastOnLuminance(Color ink, double sky) {
+  final l = ink.computeLuminance();
+  return (math.max(l, sky) + 0.05) / (math.min(l, sky) + 0.05);
+}
+
+/// Pale or dark ink for text from the sky actually behind it: the mean
+/// relative luminance of [SkyProbe] under the text. The day sky the phone
+/// draws runs from deep blue (pale ink reads) to lit cloud (dark ink
+/// reads), so the sun's altitude alone cannot choose.
+abstract final class SkyInk {
+  /// The two inks: [Palette.night]'s and [Palette.day]'s main text.
+  static const pale = SkyColors.nightInk, dark = SkyColors.dayInk;
+
+  /// Hysteresis: the other ink must be this many times better to take over,
+  /// so a cloud drifting past does not flip the text back and forth.
+  static const double switchRatio = 1.5;
+
+  /// True for dark ink on a sky of mean relative luminance [sky]. With no
+  /// ink in use yet ([wasDark] null) the higher contrast wins. Otherwise the
+  /// ink in use stays unless the other is [switchRatio] times better, or
+  /// the one in use is below [GlassSpec.target] where the other reaches it
+  /// (the band between, where neither reaches it, is left to the halo).
+  static bool isDark(double sky, {bool? wasDark}) {
+    final d = contrastOnLuminance(dark, sky), p = contrastOnLuminance(pale, sky);
+    if (wasDark == null) return d >= p;
+    final (now, other) = wasDark ? (d, p) : (p, d);
+    const t = GlassSpec.target;
+    final swap = other >= now * switchRatio || (now < t && other >= t);
+    return swap ? !wasDark : wasDark;
   }
 }
 
@@ -142,12 +180,19 @@ class SkyProbe {
     return Color.from(alpha: 1, red: _rgb[i], green: _rgb[i + 1], blue: _rgb[i + 2]);
   }
 
+  /// The cells under [rect] (logical px), inclusive, or null off the grid.
+  (int, int, int, int)? _cells(Rect rect) {
+    final x0 = math.max(0, (rect.left * scale).floor()), x1 = math.min(cols - 1, (rect.right * scale).ceil() - 1);
+    final y0 = math.max(0, (rect.top * scale).floor()), y1 = math.min(rows - 1, (rect.bottom * scale).ceil() - 1);
+    return x0 > x1 || y0 > y1 ? null : (x0, x1, y0, y1);
+  }
+
   /// The darkest and brightest sky under [rect] (logical px), or null when
   /// [rect] is off the grid.
   (Color, Color)? range(Rect rect) {
-    final x0 = math.max(0, (rect.left * scale).floor()), x1 = math.min(cols - 1, (rect.right * scale).ceil() - 1);
-    final y0 = math.max(0, (rect.top * scale).floor()), y1 = math.min(rows - 1, (rect.bottom * scale).ceil() - 1);
-    if (x0 > x1 || y0 > y1) return null;
+    final cells = _cells(rect);
+    if (cells == null) return null;
+    final (x0, x1, y0, y1) = cells;
     Color? lo, hi;
     double loL = 2, hiL = -1;
     for (var y = y0; y <= y1; y++) {
@@ -159,6 +204,21 @@ class SkyProbe {
       }
     }
     return (lo!, hi!);
+  }
+
+  /// Mean relative luminance of the sky under [rect] (logical px), or null
+  /// when [rect] is off the grid.
+  double? meanLuminance(Rect rect) {
+    final cells = _cells(rect);
+    if (cells == null) return null;
+    final (x0, x1, y0, y1) = cells;
+    var sum = 0.0;
+    for (var y = y0; y <= y1; y++) {
+      for (var x = x0; x <= x1; x++) {
+        sum += _at(x, y).computeLuminance();
+      }
+    }
+    return sum / ((x1 - x0 + 1) * (y1 - y0 + 1));
   }
 
   /// True when no cell differs from [other] by more than [tolerance] on

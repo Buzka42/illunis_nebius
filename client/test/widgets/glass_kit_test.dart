@@ -30,6 +30,7 @@ Future<void> pumpPanel(WidgetTester t, {SkyLight Function(Widget child)? sky, Re
 }
 
 double haloOf(WidgetTester t) => t.state<GlassPanelState>(find.byType(GlassPanel)).halo;
+bool? darkOf(WidgetTester t) => t.state<GlassPanelState>(find.byType(GlassPanel)).dark;
 
 void main() {
   // Owner, 2026-10-29: no plates under text. The panel paints nothing and
@@ -62,9 +63,56 @@ void main() {
     final dark = _probe((x, y) => const Color(0xFF0B1630));
     await pumpPanel(t, sky: (c) => SkyLight(daylight: 0, palette: Palette.night, probe: dark, child: c));
     expect(haloOf(t), 0);
+    // The moon's edge across the top of the panel: the sky is still dark on
+    // the whole, so pale ink, with a halo where the moon is.
+    final edge = _probe((x, y) => y > 60 && y < 65 ? const Color(0xFFE0E0D8) : const Color(0xFF0B1630));
+    await pumpPanel(t, sky: (c) => SkyLight(daylight: 0, palette: Palette.night, probe: edge, child: c));
+    expect(darkOf(t), isFalse);
+    expect(haloOf(t), greaterThan(0.5));
+    // Moonlight behind the whole panel: dark ink reads on it bare.
     final moonlit = _probe((x, y) => y > 60 && y < 80 ? const Color(0xFFE0E0D8) : const Color(0xFF0B1630));
     await pumpPanel(t, sky: (c) => SkyLight(daylight: 0, palette: Palette.night, probe: moonlit, child: c));
-    expect(haloOf(t), greaterThan(0.5));
+    expect(darkOf(t), isTrue);
+    expect(haloOf(t), 0);
+  });
+
+  group('ink from the sky behind the panel', () {
+    Future<Color?> inkOver(WidgetTester t, SkyLight Function(Widget child) sky) async {
+      t.view.physicalSize = const Size(360, 800);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final text = GlassPanel(child: Builder(builder: (c) => Text('Synthetic line', style: TextStyle(color: SkyLight.paletteOf(c).ink))));
+      await t.pumpWidget(MaterialApp(home: Center(child: sky(text))));
+      await t.pump();
+      return t.renderObject<RenderParagraph>(find.text('Synthetic line')).text.style!.color;
+    }
+
+    testWidgets('pale ink on deep blue by day, dark ink on lit cloud by night sun', (t) async {
+      final deep = _probe((x, y) => const Color(0xFF0E2139));
+      expect(await inkOver(t, (c) => SkyLight(daylight: 1, palette: Palette.day, probe: deep, child: c)),
+          Palette.night.ink);
+      await t.pumpWidget(const SizedBox());
+      final cloud = _probe((x, y) => const Color(0xFF919FA6));
+      expect(await inkOver(t, (c) => SkyLight(daylight: 0, palette: Palette.night, probe: cloud, child: c)),
+          Palette.day.ink);
+    });
+
+    testWidgets('a later change eases to the other ink over the ink motion', (t) async {
+      final deep = _probe((x, y) => const Color(0xFF0E2139));
+      final cloud = _probe((x, y) => const Color(0xFFB9C2C8));
+      expect(await inkOver(t, (c) => SkyLight(daylight: 1, palette: Palette.day, probe: deep, child: c)),
+          Palette.night.ink);
+      final mid = await inkOver(t, (c) => SkyLight(daylight: 1, palette: Palette.day, probe: cloud, child: c));
+      expect(mid, isNot(Palette.day.ink));
+      expect(darkOf(t), isTrue);
+      await t.pump(Motion.ink);
+      expect(t.renderObject<RenderParagraph>(find.text('Synthetic line')).text.style!.color, Palette.day.ink);
+    });
+
+    testWidgets('no look at the sky yet: the palette from the sun', (t) async {
+      expect(await inkOver(t, (c) => SkyLight(daylight: 1, palette: Palette.day, child: c)), Palette.day.ink);
+      expect(darkOf(t), isNull);
+    });
   });
 
   testWidgets('the halo reaches the text inside, and none where the sky does not need it', (t) async {

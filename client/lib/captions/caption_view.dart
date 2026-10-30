@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+import '../ui/sky_light.dart';
+import '../ui/tokens.dart';
 import 'caption_dissolve.dart';
 import 'caption_style.dart';
 import 'caption_timing.dart';
@@ -17,6 +19,10 @@ import 'caption_timing.dart';
 /// (short when MediaQuery.disableAnimations is set). [onDismissed] fires
 /// once the caption is gone. Screen readers get the text as a live label.
 ///
+/// With [followSky], once the sky has been looked at ([SkyLight.probe]) the
+/// ink follows the sky behind the text ([CaptionInk.forLuminance]) and
+/// [ink] is only the fallback before that.
+///
 /// IllunisRoot centres it on the sky with [CenteredCaption].
 class CaptionView extends StatefulWidget {
   const CaptionView({
@@ -26,6 +32,7 @@ class CaptionView extends StatefulWidget {
     this.fog = true,
     this.font = CaptionFont.serif,
     this.ink = CaptionInk.dark,
+    this.followSky = false,
     this.fontSize = 26,
     this.fade = captionFade,
     this.onDismissed,
@@ -37,6 +44,7 @@ class CaptionView extends StatefulWidget {
   final bool fog;
   final CaptionFont font;
   final CaptionInk ink;
+  final bool followSky;
   final double fontSize;
   final Duration fade;
   final VoidCallback? onDismissed;
@@ -70,6 +78,14 @@ class CaptionViewState extends State<CaptionView> with SingleTickerProviderState
   Timer? _hold;
   _Phase _phase = _Phase.hidden;
   CaptionExit? _running;
+
+  // The ink chosen from the sky behind the text ([CaptionView.followSky]);
+  // null until the first look.
+  CaptionInk? _skyInk;
+  bool _looked = false;
+
+  /// The ink in use: from the sky once looked at, else [CaptionView.ink].
+  CaptionInk get ink => _skyInk ?? widget.ink;
 
   bool get _reduceMotion => MediaQuery.maybeDisableAnimationsOf(context) ?? false;
 
@@ -154,23 +170,48 @@ class CaptionViewState extends State<CaptionView> with SingleTickerProviderState
     super.dispose();
   }
 
+  static const _margins = EdgeInsets.fromLTRB(
+      CaptionView.sideMargin, CaptionView.driftMargin, CaptionView.sideMargin, CaptionView.bottomMargin);
+
+  /// After layout: the mean sky under the text (not its margins) picks the
+  /// ink. No look at the sky yet keeps the fallback.
+  void _lookAtSky(SkyProbe? probe) {
+    if (!mounted || _phase == _Phase.hidden) return;
+    final box = _boundary.currentContext?.findRenderObject();
+    if (probe == null || box is! RenderBox || !box.hasSize || !box.attached) return;
+    final l = probe.meanLuminance(_margins.deflateRect(box.localToGlobal(Offset.zero) & box.size));
+    final next = l == null ? _skyInk : CaptionInk.forLuminance(l, current: _skyInk);
+    if (_looked && next == _skyInk) return;
+    setState(() {
+      _skyInk = next;
+      _looked = true;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_phase == _Phase.hidden) return const SizedBox.shrink();
-    final text = RepaintBoundary(
+    final probe = widget.followSky ? SkyLight.maybeOf(context)?.probe : null;
+    if (probe != null) WidgetsBinding.instance.addPostFrameCallback((_) => _lookAtSky(probe));
+    final reduce = _reduceMotion;
+    Widget text = RepaintBoundary(
       key: _boundary,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(CaptionView.sideMargin, CaptionView.driftMargin,
-            CaptionView.sideMargin, CaptionView.bottomMargin),
-        child: Text(
-          widget.text,
-          textAlign: TextAlign.center,
-          // Straight on the sky: the caption keeps its soft halo.
-          style: captionTextStyle(font: widget.font, ink: widget.ink, fontSize: widget.fontSize)
-              .copyWith(shadows: widget.ink.shadows),
-        ),
+        padding: _margins,
+        child: _skyInk == null
+            ? _text(ink.color, ink.halo)
+            // A later change of ink eases, as the halo does.
+            : TweenAnimationBuilder<double>(
+                tween: Tween(end: _skyInk == CaptionInk.dark ? 1 : 0),
+                duration: reduce ? Duration.zero : Motion.glass,
+                curve: Motion.glassCurve,
+                builder: (context, t, _) => _text(Color.lerp(CaptionInk.pale.color, CaptionInk.dark.color, t)!,
+                    Color.lerp(CaptionInk.pale.halo, CaptionInk.dark.halo, t)!),
+              ),
       ),
     );
+    // The first frame, before the look, is not shown in the fallback ink.
+    if (probe != null && !_looked) text = Opacity(opacity: 0, child: text);
     return Semantics(
       container: true,
       liveRegion: true,
@@ -211,6 +252,15 @@ class CaptionViewState extends State<CaptionView> with SingleTickerProviderState
       child: text,
     );
   }
+
+  // Straight on the sky: the caption keeps its soft halo, at full strength.
+  Widget _text(Color color, Color halo) => Text(
+        widget.text,
+        textAlign: TextAlign.center,
+        style: TypeScale.caption(color,
+                sans: widget.font == CaptionFont.sans, size: widget.fontSize, wght: widget.font.weight)
+            .copyWith(shadows: Halo.shadows(halo, 1)),
+      );
 
   double get _seed => (widget.text.hashCode & 0x3ff) / 1024.0;
 }

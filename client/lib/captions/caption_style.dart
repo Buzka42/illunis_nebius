@@ -1,5 +1,6 @@
 import 'package:flutter/painting.dart';
 
+import '../ui/sky_light.dart' show SkyInk;
 import '../ui/tokens.dart';
 
 /// Caption families, from the one type scale ([TypeScale.caption]).
@@ -42,12 +43,20 @@ class CaptionInk {
   static const daySky = SkyColors.dayGlass;
 
   /// Ink for a sky [daylight] of the way from night (0) to day (1), via a
-  /// stand-in sky colour between [nightSky] and [daySky].
+  /// stand-in sky colour between [nightSky] and [daySky]. The fallback until
+  /// the sky has been looked at ([forLuminance]).
   static CaptionInk forDaylight(double daylight) =>
       forBackground(Color.lerp(nightSky, daySky, daylight.clamp(0.0, 1.0))!);
 
-  /// The soft halo in the opposite ink ([Halo]), at full strength: a caption
-  /// has no look at the sky behind it.
+  /// Ink for the sky actually behind the text, of mean relative luminance
+  /// [sky], keeping [current] unless the other ink is clearly better
+  /// ([SkyInk.isDark]).
+  static CaptionInk forLuminance(double sky, {CaptionInk? current}) =>
+      SkyInk.isDark(sky, wasDark: current == null ? null : current == dark) ? dark : pale;
+
+  /// The soft halo in the opposite ink ([Halo]), at full strength: it carries
+  /// the caption where neither ink reaches 4.5:1 on the sky behind it, and
+  /// before the sky has been looked at.
   List<Shadow> get shadows => Halo.shadows(halo, 1);
 }
 
