@@ -368,7 +368,8 @@ class _BreathViewState extends State<BreathView> with SingleTickerProviderStateM
 
   Widget _sessionBody(BuildContext context, BreathSession s, Palette p) {
     final t = s.technique;
-    final halo = [Shadow(blurRadius: 10, color: p.halo)];
+    // The same three-layer halo as the rest of the sky text (readability pass 2026-10-30).
+    final halo = Halo.shadows(p.halo, 1);
     final label = TypeScale.label(p.ink).copyWith(shadows: halo);
     final status = switch (s.stage) {
       BreathStage.countIn => 'Getting ready: breath ${s.countInCycle} of ${t.countInCycles}',
