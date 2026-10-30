@@ -1,7 +1,9 @@
 /// The latest exchange, straight on the sky (no plate), centred above the
 /// input (UI_PLAN UI-2): your own line small in the sans and ink2, the reply
 /// in the serif, notes (sources, the not-medical-advice line) under a
-/// hairline, and an offer's Yes / No under a hairline at the bottom. It
+/// hairline, then the council trace ("How the council answered", open by
+/// default, a tap folds it), and an offer's Yes / No under a hairline at the
+/// bottom. It
 /// grows to fit and never scrolls. When it would not fit, the fit ladder:
 /// the reply steps 22, 20, 18 px (never back up within an exchange), then
 /// your line goes, then the inset tightens, and only then does the whole
@@ -13,7 +15,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../app/chat_thread.dart';
-import '../../app/council_flow.dart' show notMedicalAdviceLine;
+import '../../app/council_flow.dart' show councilTraceTitle, notMedicalAdviceLine;
+import '../../ui/icons.dart';
 import '../../ui/sky_light.dart';
 import '../../ui/tokens.dart';
 import 'glass_actions.dart';
@@ -32,6 +35,10 @@ abstract final class ExchangeMetrics {
   static const double notesGap = Space.s12;
   static const double noteGap = Space.s4;
 
+  /// The trace toggle's chevron and the gap before it.
+  static const double traceGlyph = 16;
+  static const double traceGlyphGap = Space.s4;
+
   /// Where a short reply sits: a little above the middle of the open sky.
   static const Alignment place = Alignment(0, -0.12);
 }
@@ -39,7 +46,7 @@ abstract final class ExchangeMetrics {
 /// What one exchange shows, read from its thread entries.
 @immutable
 class ExchangeContent {
-  const ExchangeContent({this.echo, this.paragraphs = const [], this.notes = const [], this.offerId});
+  const ExchangeContent({this.echo, this.paragraphs = const [], this.notes = const [], this.trace = const [], this.offerId});
 
   /// The user's own line.
   final String? echo;
@@ -50,13 +57,19 @@ class ExchangeContent {
   /// Sources and the disclaimer, each its own note line.
   final List<String> notes;
 
+  /// The council trace lines of the exchange's council answer, if any.
+  final List<String> trace;
+
   /// The open offer's id (Yes / No show), if any.
   final String? offerId;
+
+  bool get hasNotes => notes.isNotEmpty || trace.isNotEmpty;
 
   factory ExchangeContent.of(List<ChatEntry> entries) {
     String? echo;
     final paragraphs = <String>[], notes = <String>[];
     String? offer;
+    var trace = const <String>[];
     var disclaimer = false;
     for (final e in entries) {
       if (e.role == ChatRole.user) {
@@ -71,9 +84,10 @@ class ExchangeContent {
       if (text.isNotEmpty) paragraphs.add(text);
       if (e.sources case final s? when !notes.contains(s)) notes.add(s);
       if (e.offer case final o? when o.isOpen) offer = o.id;
+      if (e.trace case final t?) trace = t;
     }
     if (disclaimer) notes.add(notMedicalAdviceLine);
-    return ExchangeContent(echo: echo, paragraphs: paragraphs, notes: notes, offerId: offer);
+    return ExchangeContent(echo: echo, paragraphs: paragraphs, notes: notes, trace: trace, offerId: offer);
   }
 }
 
@@ -123,11 +137,19 @@ double _textWidth(String text, TextStyle style, TextScaler scaler) {
 double offerHeight(TextScaler scaler) =>
     math.max(Space.target, _textHeight('Yes', TypeScale.label(_anyColour), double.infinity, scaler) + 2 * Space.s12);
 
+/// Height of the trace toggle row at [inner] width: a 48 px target or the
+/// title's lines beside the chevron, padded.
+double traceToggleHeight(double inner, TextScaler scaler) {
+  final room = inner - ExchangeMetrics.traceGlyph - ExchangeMetrics.traceGlyphGap;
+  final title = _textHeight(councilTraceTitle, TypeScale.label(_anyColour), room, scaler);
+  return math.max(Space.target, math.max(title, ExchangeMetrics.traceGlyph) + 2 * Space.s12);
+}
+
 /// Width and height of [c] at reply [size], with or without the [echo],
-/// with [inset], at most [maxWidth] wide.
+/// with [inset], at most [maxWidth] wide, with the trace open or folded.
 ExchangeFit measureExchange(ExchangeContent c,
     {required double size, required bool echo, required EdgeInsets inset, required double maxWidth,
-    required TextScaler scaler, double hair = 1}) {
+    required TextScaler scaler, double hair = 1, bool traceOpen = true}) {
   final reply = TypeScale.reply(_anyColour, size: size);
   final body = TypeScale.body(_anyColour), note = TypeScale.note(_anyColour);
   final showEcho = echo && c.echo != null;
@@ -136,6 +158,12 @@ ExchangeFit measureExchange(ExchangeContent c,
     if (showEcho) _textWidth(c.echo!, body, scaler),
     for (final t in c.paragraphs) _textWidth(t, reply, scaler),
     for (final n in c.notes) _textWidth(n, note, scaler),
+    // Folded or open, the same width: a tap does not resize the glass sideways.
+    if (c.trace.isNotEmpty)
+      _textWidth(councilTraceTitle, TypeScale.label(_anyColour), scaler) +
+          ExchangeMetrics.traceGlyphGap +
+          ExchangeMetrics.traceGlyph,
+    for (final l in c.trace) _textWidth(l, note, scaler),
   ].fold(0.0, math.max).ceilToDouble() + 1 + inset.horizontal;
   if (c.offerId != null) natural = math.max(natural, ExchangeMetrics.minOfferWidth);
   final width = math.min(natural, maxWidth);
@@ -143,17 +171,27 @@ ExchangeFit measureExchange(ExchangeContent c,
   var h = inset.vertical;
   if (showEcho) {
     h += _textHeight(c.echo!, body, inner, scaler);
-    if (c.paragraphs.isNotEmpty || c.notes.isNotEmpty) h += ExchangeMetrics.echoGap;
+    if (c.paragraphs.isNotEmpty || c.hasNotes) h += ExchangeMetrics.echoGap;
   }
   for (final (i, t) in c.paragraphs.indexed) {
     if (i > 0) h += ExchangeMetrics.paragraphGap;
     h += _textHeight(t, reply, inner, scaler);
   }
-  if (c.notes.isNotEmpty) {
+  if (c.hasNotes) {
     if (showEcho || c.paragraphs.isNotEmpty) h += 2 * ExchangeMetrics.notesGap + hair;
     for (final (i, n) in c.notes.indexed) {
       if (i > 0) h += ExchangeMetrics.noteGap;
       h += _textHeight(n, note, inner, scaler);
+    }
+    if (c.trace.isNotEmpty) {
+      if (c.notes.isNotEmpty) h += ExchangeMetrics.noteGap;
+      h += traceToggleHeight(inner, scaler);
+      if (traceOpen) {
+        for (final (i, l) in c.trace.indexed) {
+          if (i > 0) h += ExchangeMetrics.noteGap;
+          h += _textHeight(l, note, inner, scaler);
+        }
+      }
     }
   }
   if (c.offerId != null) h += offerHeight(scaler);
@@ -163,9 +201,14 @@ ExchangeFit measureExchange(ExchangeContent c,
 /// The first rung of the ladder at which [c] fits [height]; the last rung
 /// (the scale-down guard then applies) when none does.
 ExchangeFit fitExchange(ExchangeContent c,
-    {required double maxWidth, required double height, required TextScaler scaler, double cap = 22, double hair = 1}) {
+    {required double maxWidth,
+    required double height,
+    required TextScaler scaler,
+    double cap = 22,
+    double hair = 1,
+    bool traceOpen = true}) {
   ExchangeFit at(double size, bool echo, EdgeInsets inset) => measureExchange(c,
-      size: size, echo: echo, inset: inset, maxWidth: maxWidth, scaler: scaler, hair: hair);
+      size: size, echo: echo, inset: inset, maxWidth: maxWidth, scaler: scaler, hair: hair, traceOpen: traceOpen);
   late ExchangeFit last;
   for (final (size, _) in TypeScale.replySteps.where((s) => s.$1 <= cap)) {
     last = at(size, true, ExchangeMetrics.inset);
@@ -187,9 +230,19 @@ class GlassExchange extends StatelessWidget {
     this.memory,
     this.exchange,
     this.grow = Motion.enter,
+    this.traceOpen = true,
+    this.onTraceToggle,
   });
 
   final List<ChatEntry> entries;
+
+  /// The trace toggle ("How the council answered").
+  static const traceToggleKey = ValueKey('council-trace-toggle');
+
+  /// Whether the council trace shows its lines; [onTraceToggle] gets a tap
+  /// on its title.
+  final bool traceOpen;
+  final VoidCallback? onTraceToggle;
 
   /// A tapped Yes or No.
   final void Function(String label) onChoice;
@@ -213,7 +266,8 @@ class GlassExchange extends StatelessWidget {
           height: box.maxHeight,
           scaler: scaler,
           cap: cap,
-          hair: hair);
+          hair: hair,
+          traceOpen: traceOpen);
       memory?.cap = fit.size;
       return Align(
         alignment: ExchangeMetrics.place,
@@ -239,7 +293,7 @@ class GlassExchange extends StatelessWidget {
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 if (fit.echo) ...[
                   Text(c.echo!, style: TypeScale.body(p.ink2)),
-                  if (c.paragraphs.isNotEmpty || c.notes.isNotEmpty) const SizedBox(height: ExchangeMetrics.echoGap),
+                  if (c.paragraphs.isNotEmpty || c.hasNotes) const SizedBox(height: ExchangeMetrics.echoGap),
                 ],
                 if (c.paragraphs.isNotEmpty)
                   Semantics(
@@ -251,7 +305,7 @@ class GlassExchange extends StatelessWidget {
                       ],
                     ]),
                   ),
-                if (c.notes.isNotEmpty) ...[
+                if (c.hasNotes) ...[
                   if (fit.echo || c.paragraphs.isNotEmpty) ...[
                     const SizedBox(height: ExchangeMetrics.notesGap),
                     Container(key: const ValueKey('exchange-notes-rule'), height: hair, color: p.rimSide),
@@ -260,6 +314,15 @@ class GlassExchange extends StatelessWidget {
                   for (final (i, n) in c.notes.indexed) ...[
                     if (i > 0) const SizedBox(height: ExchangeMetrics.noteGap),
                     Text(n, style: TypeScale.note(p.ink2)),
+                  ],
+                  if (c.trace.isNotEmpty) ...[
+                    if (c.notes.isNotEmpty) const SizedBox(height: ExchangeMetrics.noteGap),
+                    _TraceToggle(open: traceOpen, onTap: onTraceToggle, palette: p),
+                    if (traceOpen)
+                      for (final (i, l) in c.trace.indexed) ...[
+                        if (i > 0) const SizedBox(height: ExchangeMetrics.noteGap),
+                        Text(l, key: ValueKey('council-trace-line-$i'), style: TypeScale.note(p.ink2)),
+                      ],
                   ],
                 ],
               ]),
@@ -270,6 +333,49 @@ class GlassExchange extends StatelessWidget {
                 GlassAction('No', () => onChoice('No'), key: ValueKey('offer-$offer-no')),
               ]),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// "How the council answered" with a chevron: a 48 px target that folds and
+/// opens the trace lines. Built inside the panel, so it takes the halo.
+class _TraceToggle extends StatelessWidget {
+  const _TraceToggle({required this.open, required this.onTap, required this.palette});
+  final bool open;
+  final VoidCallback? onTap;
+  final Palette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    // Material below resets DefaultTextStyle, so the halo is passed here.
+    final style = TypeScale.label(palette.ink2).copyWith(shadows: TextHalo.of(context));
+    return Semantics(
+      button: true,
+      expanded: open,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          key: GlassExchange.traceToggleKey,
+          onTap: onTap,
+          highlightColor: palette.ink.withValues(alpha: 0.08),
+          customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.control)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: Space.target),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: Space.s12),
+              child: Row(children: [
+                Flexible(child: Text(councilTraceTitle, style: style)),
+                const SizedBox(width: ExchangeMetrics.traceGlyphGap),
+                // Points right when folded, down when open.
+                RotatedBox(
+                  quarterTurns: open ? 1 : 0,
+                  child: IllunisIcon(IllunisGlyph.forward, color: palette.ink2, size: ExchangeMetrics.traceGlyph),
+                ),
+              ]),
+            ),
+          ),
         ),
       ),
     );

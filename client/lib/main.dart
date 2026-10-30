@@ -279,6 +279,9 @@ Future<void> main() async {
       caption: (c) {
         controller.showCaption(c);
         if (!voiceEnabled) thread.attachSources(c);
+      },
+      trace: (lines) {
+        if (!voiceEnabled) thread.attachTrace(lines);
       });
   // Typed chat: the council offer is a Yes / No bubble that closes with the
   // offer (a typed or tapped answer, or the timeout).

@@ -1,8 +1,8 @@
 /// The typed chat thread (PLAN.md decision 2026-10-28, build plan B2).
 ///
-/// A list of entries `{role, text, sources?, offer?}` kept in the private
+/// A list of entries `{role, text, sources?, offer?, trace?}` kept in the private
 /// store under [StoreKeys.chatThread]. Consecutive assistant sentences merge
-/// into one bubble; sources and offers close a bubble. Entries hold the
+/// into one bubble; sources, traces and offers close a bubble. Entries hold the
 /// user's own words, so they are never logged.
 library;
 
@@ -29,7 +29,7 @@ class ChatOffer {
 
 @immutable
 class ChatEntry {
-  const ChatEntry({required this.role, required this.text, this.sources, this.offer});
+  const ChatEntry({required this.role, required this.text, this.sources, this.offer, this.trace});
   final ChatRole role;
   final String text;
 
@@ -39,14 +39,23 @@ class ChatEntry {
   /// Set on a yes/no question ("Open your logs?").
   final ChatOffer? offer;
 
-  ChatEntry copyWith({String? text, String? sources, ChatOffer? offer}) => ChatEntry(
-      role: role, text: text ?? this.text, sources: sources ?? this.sources, offer: offer ?? this.offer);
+  /// The council trace lines after a council answer (council_flow.dart
+  /// councilTraceLines).
+  final List<String>? trace;
+
+  ChatEntry copyWith({String? text, String? sources, ChatOffer? offer, List<String>? trace}) => ChatEntry(
+      role: role,
+      text: text ?? this.text,
+      sources: sources ?? this.sources,
+      offer: offer ?? this.offer,
+      trace: trace ?? this.trace);
 
   Map<String, Object> toJson() => {
         'role': role.name,
         'text': text,
         'sources': ?sources,
         if (offer != null) 'offer': {'id': offer!.id, 'state': offer!.state.name},
+        'trace': ?trace,
       };
 
   /// Null for anything malformed. An offer that was still open is closed:
@@ -63,7 +72,14 @@ class ChatEntry {
       final st = OfferState.values.asNameMap()[o['state']] ?? OfferState.closed;
       offer = ChatOffer(o['id'] as String, st == OfferState.open ? OfferState.closed : st);
     }
-    return ChatEntry(role: role, text: text, sources: s is String ? s : null, offer: offer);
+    final tr = j['trace'];
+    final trace = tr is List ? tr.whereType<String>().toList() : null;
+    return ChatEntry(
+        role: role,
+        text: text,
+        sources: s is String ? s : null,
+        offer: offer,
+        trace: trace == null || trace.isEmpty ? null : trace);
   }
 }
 
@@ -77,6 +93,17 @@ class ChatThread extends ChangeNotifier {
 
   final _entries = <ChatEntry>[];
   Future<void> _writes = Future.value();
+
+  /// Whether the council trace panel is open. It starts open (owner
+  /// decision 2026-10-30: the trace shows by default) and a tap's choice
+  /// holds for later answers in this run.
+  bool get traceOpen => _traceOpen;
+  bool _traceOpen = true;
+
+  void toggleTrace() {
+    _traceOpen = !_traceOpen;
+    notifyListeners();
+  }
 
   List<ChatEntry> get entries => List.unmodifiable(_entries);
 
@@ -124,7 +151,11 @@ class ChatThread extends ChangeNotifier {
     final t = sentence.trim();
     if (t.isEmpty) return;
     final last = _entries.isEmpty ? null : _entries.last;
-    if (last != null && last.role == ChatRole.assistant && last.sources == null && last.offer == null) {
+    if (last != null &&
+        last.role == ChatRole.assistant &&
+        last.sources == null &&
+        last.offer == null &&
+        last.trace == null) {
       _entries[_entries.length - 1] = last.copyWith(text: '${last.text} $t');
       _changed();
       return;
@@ -152,6 +183,19 @@ class ChatThread extends ChangeNotifier {
       return;
     }
     _entries[i] = _entries[i].copyWith(sources: sources);
+    _changed();
+  }
+
+  /// Attaches the council trace lines to the last assistant bubble (or adds
+  /// one), like [attachSources].
+  void attachTrace(List<String> lines) {
+    if (lines.isEmpty) return;
+    final i = _entries.lastIndexWhere((e) => e.role == ChatRole.assistant);
+    if (i < 0 || _entries[i].offer != null) {
+      _add(ChatEntry(role: ChatRole.assistant, text: '', trace: List.unmodifiable(lines)));
+      return;
+    }
+    _entries[i] = _entries[i].copyWith(trace: List.unmodifiable(lines));
     _changed();
   }
 

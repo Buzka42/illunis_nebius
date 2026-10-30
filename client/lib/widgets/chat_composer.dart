@@ -96,6 +96,8 @@ class _ChatComposerState extends State<ChatComposer> {
                       memory: _fit,
                       exchange: start,
                       grow: fade,
+                      traceOpen: widget.thread.traceOpen,
+                      onTraceToggle: widget.thread.toggleTrace,
                     ),
                   ),
           );

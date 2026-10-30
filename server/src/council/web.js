@@ -9,14 +9,14 @@ export const WEB_TEXT_MAX = 1200;
 
 const clip = (s) => String(s ?? "").trim().slice(0, WEB_TEXT_MAX);
 
-// Returns { text, results: [{title, url, content}] } or null.
+// Returns { text, results: [{title, url, content}], via: "meta" | "tavily" } or null.
 export async function searchWeb(query, env = {}, { fetchFn = fetch, timeoutMs } = {}) {
   const metaOk = !metaConfigProblem(env) && !dataModeProblem(env, { provider: META_PROVIDER, model: metaModel(env), role: "council" });
   if (metaOk) {
     try {
       const got = await webSearchMeta(query, env, { fetchFn, timeoutMs });
       const text = clip(got?.text);
-      if (text) return { text, results: (got.results ?? []).map((r) => ({ title: r.title, url: r.url, content: text })) };
+      if (text) return { text, results: (got.results ?? []).map((r) => ({ title: r.title, url: r.url, content: text })), via: "meta" };
     } catch {
       // Meta unavailable: try Tavily below.
     }
@@ -25,7 +25,7 @@ export async function searchWeb(query, env = {}, { fetchFn = fetch, timeoutMs } 
     try {
       const got = await searchTavily(query, env, { fetchFn, timeoutMs, role: "council" });
       const text = clip(got.answer || got.results.map((r) => r.content).join(" "));
-      if (text) return { text, results: got.results.map(({ title, url, content }) => ({ title, url, content })) };
+      if (text) return { text, results: got.results.map(({ title, url, content }) => ({ title, url, content })), via: "tavily" };
     } catch {
       return null;
     }

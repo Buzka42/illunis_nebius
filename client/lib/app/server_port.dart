@@ -331,6 +331,82 @@ List<CouncilSource> _sources(Object? v) => [
       for (final e in (v is List ? v : const [])) ?CouncilSource.fromJson(e),
     ];
 
+/// Whether a consult searched the web (relay.js trace `web_search`).
+enum WebSearch { used, unavailable, notNeeded }
+
+/// One source a consult drew on, by kind (relay.js trace `sources`).
+class CouncilTraceSource {
+  const CouncilTraceSource(this.title, {this.web = false});
+  final String title;
+  final bool web;
+}
+
+/// One consult in the council trace (relay.js, T18): which expert, what the
+/// relay asked, the sources it was given and whether web search ran. A real
+/// record from the server; it holds no model text beyond [question].
+class CouncilConsult {
+  const CouncilConsult({
+    required this.expert,
+    this.field,
+    this.question = '',
+    this.sources = const [],
+    this.webSearch = WebSearch.notNeeded,
+    this.webVia,
+    this.answered = true,
+  });
+  final String expert;
+  final String? field;
+  final String question;
+  final List<CouncilTraceSource> sources;
+  final WebSearch webSearch;
+
+  /// "tavily" or "meta" when [webSearch] is used.
+  final String? webVia;
+  final bool answered;
+
+  static const _web = {'used': WebSearch.used, 'unavailable': WebSearch.unavailable, 'not_needed': WebSearch.notNeeded};
+
+  static CouncilConsult? fromJson(Map j) {
+    final expert = j['expert'];
+    if (expert is! String || expert.isEmpty) return null;
+    final field = j['field'], question = j['question'], via = j['web_via'];
+    return CouncilConsult(
+      expert: expert,
+      field: field is String && field.trim().isNotEmpty ? field.trim() : null,
+      question: question is String ? question : '',
+      sources: [
+        for (final s in (j['sources'] is List ? j['sources'] as List : const []))
+          if (s is Map && s['title'] is String) CouncilTraceSource(s['title'] as String, web: s['kind'] == 'web'),
+      ],
+      webSearch: _web[j['web_search']] ?? WebSearch.notNeeded,
+      webVia: via is String ? via : null,
+      answered: j['answered'] != false,
+    );
+  }
+}
+
+/// The council trace: the consults in call order and the limits the run
+/// closed on (`time_limit`, `consult_limit`).
+class CouncilTrace {
+  const CouncilTrace({this.consults = const [], this.notes = const []});
+  final List<CouncilConsult> consults;
+  final List<String> notes;
+  bool get isEmpty => consults.isEmpty && notes.isEmpty;
+
+  factory CouncilTrace.fromJson(Object? v) {
+    final consults = <CouncilConsult>[], notes = <String>[];
+    for (final e in (v is List ? v : const [])) {
+      if (e is! Map) continue;
+      if (e['note'] case final String n) {
+        notes.add(n);
+      } else if (CouncilConsult.fromJson(e) case final c?) {
+        consults.add(c);
+      }
+    }
+    return CouncilTrace(consults: consults, notes: notes);
+  }
+}
+
 /// The council's answer (server/src/council/relay.js `assemble`, or the
 /// `council` view inside a /digest answer). [synthesis] is already gated on
 /// the server; when [medical] it already ends with the not-medical-advice
@@ -346,6 +422,7 @@ class CouncilResult {
     this.providers = const [],
     this.limitsHit = const [],
     this.adviseOnly = true,
+    this.trace = const CouncilTrace(),
   });
   final String synthesis;
   final List<String> expertsConsulted;
@@ -357,6 +434,9 @@ class CouncilResult {
   final List<String> limitsHit;
   final bool adviseOnly;
 
+  /// Empty when the server sent none (legacy council, digest view, crisis).
+  final CouncilTrace trace;
+
   factory CouncilResult.fromJson(Map<String, dynamic> j) => CouncilResult(
         synthesis: (j['synthesis'] as String? ?? '').trim(),
         expertsConsulted: _strings(j['experts_consulted']),
@@ -367,6 +447,7 @@ class CouncilResult {
         providers: _strings(j['providers']),
         limitsHit: _strings(j['limits_hit']),
         adviseOnly: j['advise_only'] != false,
+        trace: CouncilTrace.fromJson(j['trace']),
       );
 }
 

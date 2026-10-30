@@ -5,7 +5,9 @@
 /// council about ...", sends the question to POST /council (purpose chat)
 /// with the short-term context. The synthesis is spoken through the shared
 /// speech queue, the medical line with it, and the source titles show
-/// briefly as a caption.
+/// briefly as a caption. In typed chat the server's trace (which experts,
+/// which sources, whether web search ran) shows under the answer
+/// ([councilTraceLines]).
 ///
 /// Logs carry fixed codes only, never a question or an answer.
 library;
@@ -51,14 +53,86 @@ String? sourcesCaption(List<CouncilSource> sources, {int max = 3}) {
   return titles.isEmpty ? null : 'Sources: ${titles.join(' · ')}';
 }
 
-/// Speaks a council answer and then shows its sources.
+/// Title of the trace panel under a council answer.
+const councilTraceTitle = 'How the council answered';
+
+String _count(int n, String what) => '$n $what${n == 1 ? '' : 's'}';
+
+String _expertLabel(CouncilConsult c) {
+  final name = c.field ?? c.expert.replaceAll('_', ' ');
+  return name.isEmpty ? name : '${name[0].toUpperCase()}${name.substring(1)}';
+}
+
+/// The trace as panel lines: one per expert ("Sleep and lifestyle: 3
+/// sources, web search not needed"; an expert asked twice is one line), then
+/// the web search line, then a line for a limit the run closed on. Empty
+/// when there is nothing to show.
+List<String> councilTraceLines(CouncilTrace t) {
+  final byExpert = <String, List<CouncilConsult>>{};
+  for (final c in t.consults) {
+    byExpert.putIfAbsent(c.expert, () => []).add(c);
+  }
+  final lines = <String>[];
+  final searchedFor = <String>[];
+  var unavailable = false, tavily = false;
+  for (final cs in byExpert.values) {
+    final label = _expertLabel(cs.first);
+    final seen = <(String, bool)>{};
+    for (final c in cs) {
+      for (final s in c.sources) {
+        seen.add((s.title, s.web));
+      }
+    }
+    final web = seen.where((s) => s.$2).length, bank = seen.length - web;
+    final used = cs.any((c) => c.webSearch == WebSearch.used);
+    final missing = !used && cs.any((c) => c.webSearch == WebSearch.unavailable);
+    if (used) searchedFor.add(label);
+    unavailable |= missing;
+    tavily |= cs.any((c) => c.webSearch == WebSearch.used && c.webVia == 'tavily');
+    if (!cs.any((c) => c.answered)) {
+      lines.add('$label: did not answer');
+      continue;
+    }
+    final sources = switch ((bank, web)) {
+      (0, 0) => 'no sources',
+      (_, 0) => _count(bank, 'source'),
+      (0, _) => _count(web, 'web source'),
+      _ => '$bank bank and ${_count(web, 'web source')}',
+    };
+    final search = used ? 'web search used' : (missing ? 'web search unavailable' : 'web search not needed');
+    lines.add('$label: $sources, $search');
+  }
+  if (byExpert.isNotEmpty) {
+    final name = tavily ? 'Web search (Tavily)' : 'Web search';
+    lines.add(searchedFor.isNotEmpty
+        ? '$name: ran for ${searchedFor.join(', ')}'
+        : unavailable
+            ? '$name: unavailable'
+            : '$name: not needed');
+  }
+  for (final n in t.notes) {
+    if (n == 'time_limit') lines.add('The council closed at its time limit.');
+    if (n == 'consult_limit') lines.add('The council closed at its consult limit.');
+  }
+  return lines;
+}
+
+/// Speaks a council answer and then shows its sources and its trace.
 class CouncilSpeaker {
-  const CouncilSpeaker({required this.speak, this.caption});
+  const CouncilSpeaker({required this.speak, this.caption, this.trace});
   final AsideSpeak speak;
   final AsideCaption? caption;
 
-  /// True when the whole answer played (sources are shown only then).
-  Future<bool> say(CouncilResult r) => sayText(r.synthesis, medical: r.medical, sources: r.crisis ? const [] : r.sources);
+  /// Gets the trace lines ([councilTraceLines]) after a whole answer played.
+  final void Function(List<String> lines)? trace;
+
+  /// True when the whole answer played (sources and trace show only then).
+  Future<bool> say(CouncilResult r) async {
+    if (!await sayText(r.synthesis, medical: r.medical, sources: r.crisis ? const [] : r.sources)) return false;
+    final lines = r.crisis ? const <String>[] : councilTraceLines(r.trace);
+    if (lines.isNotEmpty) trace?.call(lines);
+    return true;
+  }
 
   Future<bool> sayText(String text, {bool medical = false, List<CouncilSource> sources = const []}) async {
     if (!await speak(withMedicalLine(text, medical))) return false;

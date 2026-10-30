@@ -13,6 +13,10 @@
 // one search before the expert call, and its results become sources the expert may cite; an expert may also ask
 // for a search after answering. Only this relay runs searches, at most LIMITS.maxSearches per run, kind "web".
 // Nothing here logs; errors carry fixed codes.
+// Trace (T18, shown by default): one entry per consult, in call order, {expert, field, question (at most
+// TRACE_QUESTION characters), sources: [{title, kind: "bank"|"web"}], web_search: "used"|"unavailable"|"not_needed",
+// web_via?: "meta"|"tavily", answered}, then {note: "time_limit"|"consult_limit"} when the run closed on one. Fixed
+// registry text and the relay's question only: no expert or model text, no ids, urls or keys.
 import {
   CLINICIAN_PATH, GATE_RULE_PROMPT, HEALTH_HARM_SCOPE, HEALTH_WELLBEING_SCOPE, NOT_MEDICAL_ADVICE, REFERRAL_TEXT, gateWithRepair,
   isCrisis, repairInstruction,
@@ -41,6 +45,10 @@ const PLAN_PROMPT =
 export const PURPOSES = ["chat", "digest", "analysis"];
 const MAX_SYNTHESIS = 2000;
 const MAX_POINT = 400;
+export const TRACE_QUESTION = 120;
+const TRACE_TITLE = 80;
+const TRACE_SOURCES = 10;
+const TRACE_NOTES = ["time_limit", "consult_limit"];
 
 // The consult tool for this deploy: its enum lists only the experts the flags leave on (experts.js activeExperts).
 export const consultTool = (env = {}) => ({
@@ -84,6 +92,11 @@ export function relaySystem(purpose, env = {}) {
 }
 
 const clip = (v, n) => (typeof v === "string" ? v.slice(0, n) : "");
+// One line, at most n characters; a cut one ends in an ellipsis.
+const oneLine = (v, n) => {
+  const s = String(v ?? "").replace(/\s+/g, " ").trim();
+  return s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`;
+};
 const jsonIn = (text) => {
   const m = String(text ?? "").replace(/<think>[\s\S]*?<\/think>/gi, "").match(/\{[\s\S]*\}/);
   try {
@@ -124,6 +137,7 @@ export function parseFinal(content) {
 
 export const crisisResult = (purpose) => ({
   synthesis: REFERRAL_TEXT, experts_consulted: [], sources: [], medical: false, crisis: true, purpose, providers: [], advise_only: true,
+  trace: [],
 });
 
 // Appends the medical lines once each, after the gate so the gate can never remove them.
@@ -148,7 +162,7 @@ export async function runCouncilV2(input, env = {}, deps = {}) {
   // reserve: time kept back for later calls (the closing synthesis).
   const timeoutMs = (reserve = 0) => Math.max(1, Math.min(remaining() - reserve, limits.callTimeoutMs));
   const consultOpen = () => remaining() > limits.finalReserveMs;
-  const state = { consults: 0, perExpert: new Map(), consulted: [], sources: new Map(), cited: new Set(), given: new Set(), providers: new Set(), searches: 0, hits: new Set(), codes: new Set(), calls: [] };
+  const state = { consults: 0, perExpert: new Map(), consulted: [], sources: new Map(), cited: new Set(), given: new Set(), providers: new Set(), searches: 0, hits: new Set(), codes: new Set(), calls: [], trace: [] };
   // state.calls: "<role>:<ms>:<ok|code>" per model call, fixed values only, for the route log.
   const ask = async (messages, opts, reserve = 0) => {
     const t0 = now();
@@ -184,6 +198,22 @@ export async function runCouncilV2(input, env = {}, deps = {}) {
     state.consults += 1;
     state.perExpert.set(expert.id, (state.perExpert.get(expert.id) ?? 0) + 1);
     if (!state.consulted.includes(expert.id)) state.consulted.push(expert.id);
+    // Pushed before the first await, so the trace keeps call order across parallel consults.
+    const trace = { expert: expert.id, field: expert.field, question: oneLine(q, TRACE_QUESTION), sources: [], web_search: "not_needed", answered: false };
+    state.trace.push(trace);
+    // A search that was needed: "used" once any search returned, else "unavailable" (failed, none set up, or no
+    // search left in this run).
+    const searched = (found) => {
+      if (found && !found.error) {
+        trace.web_search = "used";
+        if (found.via) trace.web_via = found.via;
+      } else if (trace.web_search !== "used") trace.web_search = "unavailable";
+    };
+    const traceSources = (list, kind) => {
+      for (const s of list ?? []) {
+        if (trace.sources.length < TRACE_SOURCES) trace.sources.push({ title: oneLine(s.title, TRACE_TITLE), kind });
+      }
+    };
 
     const { passages } = await retrieveFn(expert.bank, q, env, { k: 5, fetchFn });
     const retrieved = new Set();
@@ -196,14 +226,19 @@ export async function runCouncilV2(input, env = {}, deps = {}) {
     }
     // Thin bank: one web search before the expert call; its results are sources the expert may cite.
     // The counter is checked and raised with no await in between, so parallel consults keep the bound.
-    if (retrieved.size < THIN_BANK && state.searches < limits.maxSearches && consultOpen()) {
-      const found = await webSources(q, ++state.searches);
-      for (const g of found.given ?? []) {
-        given.push(g);
-        retrieved.add(g.id);
-      }
+    if (retrieved.size < THIN_BANK) {
+      if (state.searches < limits.maxSearches && consultOpen()) {
+        const found = await webSources(q, ++state.searches);
+        for (const g of found.given ?? []) {
+          given.push(g);
+          retrieved.add(g.id);
+        }
+        searched(found);
+      } else searched(null);
     }
     retrieved.forEach((id) => state.given.add(id));
+    traceSources(given.filter((g) => !g.id.startsWith("web:")), "bank");
+    traceSources(given.filter((g) => g.id.startsWith("web:")), "web");
     let reply;
     try {
       reply = await ask(
@@ -218,13 +253,18 @@ export async function runCouncilV2(input, env = {}, deps = {}) {
       if (err?.message === "not configured") throw err;
       return { expert_id: expert.id, error: "expert_unavailable" };
     }
+    trace.answered = true;
     const parsed = parseExpert(reply.content);
     const points = filterPoints(parsed.points, retrieved);
     for (const p of points) p.source_ids.forEach((id) => state.cited.add(id));
     const out = { expert_id: expert.id, field: expert.field, points, caveats: parsed.caveats, confidence: parsed.confidence };
-    if (parsed.search_query && state.searches < limits.maxSearches && consultOpen()) {
-      const { given: _given, ...web } = await webSources(parsed.search_query, ++state.searches);
-      out.web = web;
+    if (parsed.search_query) {
+      if (state.searches < limits.maxSearches && consultOpen()) {
+        const { given: _given, via, ...web } = await webSources(parsed.search_query, ++state.searches);
+        out.web = web;
+        searched({ ...web, via });
+        traceSources(web.sources, "web");
+      } else searched(null);
     }
     return out;
   }
@@ -252,7 +292,7 @@ export async function runCouncilV2(input, env = {}, deps = {}) {
       given.push({ id, title: r.title, text: clip(r.content, MAX_WEB_TEXT) });
       return { id, title: r.title, url: r.url };
     });
-    return { summary: clip(found.text, 1200), sources, given };
+    return { summary: clip(found.text, 1200), sources, given, via: found.via };
   }
 
   const messages = [
@@ -376,6 +416,7 @@ function assemble(final, gated, state, purpose) {
     limits_hit: [...state.hits],
     gate: gated.safety,
     advise_only: true,
+    trace: [...state.trace, ...TRACE_NOTES.filter((n) => state.hits.has(n)).map((note) => ({ note }))],
     upstream_codes: [...state.codes],
     upstream_calls: state.calls,
   };
