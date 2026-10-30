@@ -34,15 +34,39 @@ const daySkies = {
   'day blue, deep': Color(0xFF0E2139),
 };
 
-/// Skies past what a soft halo can do for inverse text at
-/// [TypeScale.inverseOpacity]: the mid-tone day sky, whose inverse is a
-/// mid-tone too (the median and the open blue between clouds, 10th
-/// percentile). The full day halo lifts them; these are the floors measured.
 const moon = Color(0xFFE9E7DF);
-const beyond = {
-  'day median': (Color(0xFF5D6D78), 3.9),
-  'day blue': (Color(0xFF375565), 3.1),
+
+/// Mid-tone skies, whose inverse is a mid-tone too (readability pass
+/// 2026-10-30): the day median and open blue (2026-10-24), the clouds of
+/// the 2026-10-30 day screenshots (p90, p99), and dusk (the plan's dusk
+/// sample, plus a rose and a glow band that are not phone captures). Each
+/// with the palette the ink picks there; the solver ([solveInk]) raises the
+/// white above 0.8 only here.
+const midTones = {
+  'day median': (Color(0xFF5D6D78), false),
+  'day blue': (Color(0xFF375565), false),
+  'day cloud p90': (Color(0xFF646865), false),
+  'day cloud p99': (Color(0xFF6E7372), false),
+  'day cloud p99, dark ink kept': (Color(0xFF6E7372), true),
+  'dusk': (Color(0xFF4A4F7E), false),
+  'dusk rose': (Color(0xFF7A6A80), false),
+  'dusk rose, dark ink kept': (Color(0xFF7A6A80), true),
+  'dusk glow': (Color(0xFFB0705A), true),
+  'dusk glow, pale ink kept': (Color(0xFFB0705A), false),
 };
+
+/// Skies a text region can span at once ([SkyProbe.range]: darkest and
+/// brightest under it), with the palette its mean picks.
+const spans = {
+  'open blue to lit cloud': (Color(0xFF375565), Color(0xFF919FA6)),
+  'deep blue to cloud (2026-10-30)': (Color(0xFF0F2136), Color(0xFF6E7372)),
+  'deep blue to white cloud': (Color(0xFF0F2136), Color(0xFFF2F4F6)),
+  'median to bright cloud': (Color(0xFF5D6D78), Color(0xFFB9C2C8)),
+  'night to the moon': (Color(0xFF12171D), moon),
+};
+
+/// Text 24 px and up is large text: 3:1.
+double targetFor(TextStyle s) => s.fontSize! >= 24 ? 3.0 : 4.5;
 
 typedef Step = (String, TextStyle Function(Color));
 final steps = <Step>[
@@ -92,10 +116,10 @@ Color _mean(List<double> sum, int n) =>
 /// sky within [reach] px of a stroke but not on one. Coverage comes from
 /// the same text in plain black on white.
 Future<(Color, Color)> read(WidgetTester t, TextStyle style, Color halo, double strength, Color sky,
-    {int reach = 2}) async {
+    {int reach = 2, List<Shadow>? shadows}) async {
   final (mask, w, h) =
       await render(t, style.copyWith(foreground: Paint()..color = const Color(0xFF000000)), const Color(0xFFFFFFFF));
-  final (lit, _, _) = await render(t, style.copyWith(shadows: Halo.shadows(halo, strength)), sky);
+  final (lit, _, _) = await render(t, style.copyWith(shadows: shadows ?? Halo.shadows(halo, strength)), sky);
   final cover = List<double>.generate(w * h, (i) => 1 - _ch(mask, i, 0) / 255);
   var nc = 0, nb = 0;
   final core = [0.0, 0.0, 0.0], beside = [0.0, 0.0, 0.0];
@@ -143,7 +167,7 @@ double _at(Color c, int k) => [c.r, c.g, c.b][k];
 /// stroke, undoing the difference blend), as a fraction of [halo]'s alpha.
 double measuredShare(Color seen, Color sky, Color halo) {
   final k = _channel(sky, halo);
-  return (_at(seen, k) - _at(sky, k)) / (_at(halo, k) - _at(sky, k)) / halo.a;
+  return (_at(seen, k) - _at(sky, k)) / (_at(halo, k) - _at(sky, k)) / Halo.alpha(halo, 1);
 }
 
 Color undoInverse(Color stroke) {
@@ -219,20 +243,45 @@ void main() {
     expect(solveHalo(Palette.day, [const Color(0xFFE8EEF5)]), 0);
   });
 
-  testWidgets('past a soft halo: the mid-tone day sky, full strength, and what the text then reads at', (t) async {
+  // No floor waivers (readability pass 2026-10-30): every mid-tone and every
+  // span reaches the target, with the white and halo solveInk picks.
+  testWidgets('mid-tone skies and wide spans reach the target with the solved ink', (t) async {
     final rows = <String>[];
-    for (final MapEntry(key: where, value: (sky, floor)) in beyond.entries) {
-      expect(solveHalo(Palette.day, [sky]), 1, reason: where);
-      final (bareStroke, bareBeside) = await read(t, TypeScale.reply(Palette.day.ink), Palette.day.halo, 0, sky);
-      for (final (name, style) in steps) {
-        final (stroke, beside) = await read(t, style(Palette.day.ink), Palette.day.halo, 1, sky);
-        final seen = contrast(stroke, beside);
-        rows.add('$where | $name | bare ${contrast(bareStroke, bareBeside).toStringAsFixed(1)} | '
-            'full halo ${seen.toStringAsFixed(1)}');
-        expect(seen, greaterThanOrEqualTo(floor), reason: rows.last);
+    Future<void> check(String where, Palette p, List<Color> skies) async {
+      final other = p == Palette.day ? Palette.night : Palette.day;
+      final fit = solveInk([p.halo, other.halo], skies);
+      for (final sky in skies) {
+        final model = inverseContrast(fit.halo, fit.strength, sky, opacity: fit.opacity);
+        for (final (name, style) in steps) {
+          final s = TypeScale.atOpacity(style(p.ink), fit.opacity);
+          final (stroke, beside) = await read(t, s, fit.halo, fit.strength, sky);
+          final seen = contrast(stroke, beside);
+          rows.add('$where over $sky | $name | white ${fit.opacity} halo ${fit.strength} | '
+              'model ${model.toStringAsFixed(1)} | read ${seen.toStringAsFixed(1)}');
+          expect(seen, greaterThanOrEqualTo(targetFor(s)), reason: rows.last);
+          expect(model, lessThanOrEqualTo(seen + 0.1), reason: rows.last);
+        }
+      }
+    }
+
+    for (final MapEntry(key: where, value: (sky, dark)) in midTones.entries) {
+      await check(where, dark ? Palette.day : Palette.night, [sky]);
+    }
+    for (final MapEntry(key: where, value: (lo, hi)) in spans.entries) {
+      for (final p in [Palette.night, Palette.day]) {
+        await check(where, p, [lo, hi]);
       }
     }
     debugPrint(rows.join('\n'));
+  });
+
+  test('the white stays 0.8 where that is enough, and is raised only over mid-tones', () {
+    for (final sky in [...nightSkies.values, daySkies['day blue, deep']!, const Color(0xFFF2F4F6)]) {
+      final p = sky.computeLuminance() > 0.2 ? Palette.day : Palette.night;
+      expect(solveInk([p.halo], [sky]).opacity, TypeScale.inverseOpacity, reason: '$sky');
+    }
+    expect(solveInk([Palette.night.halo], [const Color(0xFF6E7372)]).opacity, greaterThan(TypeScale.inverseOpacity));
+    expect(solveInk([Palette.night.halo], [const Color(0xFF6E7372)]).opacity, lessThanOrEqualTo(TypeScale.inverseMax));
   });
 
   test('halo shadows: none at 0, three soft zero-offset shadows otherwise, never a box', () {

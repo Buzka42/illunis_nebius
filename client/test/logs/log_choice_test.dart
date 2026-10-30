@@ -81,6 +81,29 @@ void main() {
     expect(r.logs.join('\n'), isNot(contains('Synthetic Source')));
   });
 
+  test('a used source figure is labelled an estimate; a kept one stays stated', () async {
+    final r = rig();
+    r.server.cannedLogChoice(Map<String, dynamic>.from(pendingFood), [porridgeChoice, coffeeChoice]);
+    await r.capture.submit('porridge 80 g and a coffee');
+    r.capture.chooseOne(porridgeChoice, useFound: true);
+    r.capture.chooseOne(coffeeChoice, useFound: false);
+    final items = ((r.capture.state as CapturePreview).entry as FoodEntry).items;
+    expect([for (final i in items) (i.kcal, i.estimated)], [(420, true), (90, false)]);
+  });
+
+  test('reset drops an open choice or a parse in flight, unsaved and silent', () async {
+    final r = rig();
+    r.server.cannedLogChoice(Map<String, dynamic>.from(pendingFood), [porridgeChoice]);
+    await r.capture.submit('porridge 80 g and a coffee');
+    r.capture.reset();
+    expect(r.capture.state, isA<CaptureIdle>());
+    final pending = r.capture.submit('porridge 80 g and a coffee');
+    r.capture.reset();
+    await pending;
+    expect(r.capture.state, isA<CaptureIdle>());
+    expect(await r.store.forDay(LogKind.food, day), isEmpty);
+  });
+
   test('typed "mine" keeps every number; typed "source" uses every found one', () async {
     final r = rig();
     r.server.cannedLogChoice(Map<String, dynamic>.from(pendingFood), [porridgeChoice, coffeeChoice]);

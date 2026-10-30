@@ -116,6 +116,21 @@ export function buildReplyMessages({ system_prompt, memories, shortTerm }, trans
 // Reasoning models may emit <think> blocks in content; never pass those on.
 export const stripThinking = (s) => s.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 
+// Live run 2026-10-30 (Nemotron Ultra, coach): some replies came back written twice, the second copy often after
+// the health marker and with no space between the copies. A reply never repeats its opening sentence verbatim, so
+// the text is cut where the opening sentence (at least MIN_OPENING characters) appears again.
+export const MIN_OPENING = 20;
+export function cutRepeat(text, opening) {
+  const s = String(text ?? "").trim();
+  const o = String(opening ?? "").trim();
+  if (o.length < MIN_OPENING) return s;
+  const at = s.indexOf(o, 1);
+  return at > 0 ? s.slice(0, at).trim() : s;
+}
+// The opening sentence: up to the first . ! ? or … followed by whitespace or the end of the text.
+export const openingSentence = (text) => String(text ?? "").trim().match(/^[\s\S]*?[.!?…]+(?=\s|$)/u)?.[0] ?? "";
+export const dropRepeatedReply = (text) => cutRepeat(text, openingSentence(text));
+
 function validate(plan, transcript) {
   if (!plan || typeof plan !== "object" || Array.isArray(plan)) return "plan required";
   if (typeof transcript !== "string" || !transcript.trim()) return "transcript required";
@@ -234,13 +249,14 @@ export async function runReply({ plan, transcript, phone, env = {}, memoryStore,
   }
   // The marker is stripped before the gate; health is true when the answer or its repair carried it.
   const first = stripHealthMarker(text);
+  first.text = dropRepeatedReply(first.text);
   if (!first.text) return { ...result(502, { error: "reply_upstream" }, "reply_upstream"), ignored };
   let health = first.health;
   const gated = await gateWithRepair(first.text, async (ruleId) => {
     const repaired = stripHealthMarker(
       await callModel(repairMessages(messages, first.text, ruleId), env, fetchFn, Math.min(timeoutMs, REPAIR_TIMEOUT_MS)));
     health ||= repaired.health;
-    return repaired.text;
+    return dropRepeatedReply(repaired.text);
   });
   // The health line is added after the gate, so the gate can never remove it.
   const body = {

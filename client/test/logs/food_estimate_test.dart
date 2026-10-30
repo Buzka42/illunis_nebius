@@ -37,7 +37,7 @@ void main() {
     expect(t.kcal, 220);
     expect(t.stated, 1);
     expect(t.items, 2);
-    expect(foodTotal([entry]), '2 items · 140 kcal stated for 1 of 2 · 1 estimated (80 kcal)');
+    expect(foodTotal([entry]), '2 items · 220 kcal in all · 140 kcal stated for 1 of 2 · 1 estimated (80 kcal)');
   });
 
   test('only estimates shows the estimate count, not "no calories stated"', () {

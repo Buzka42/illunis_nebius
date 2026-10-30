@@ -18,9 +18,17 @@ const MEDICAL =
   "medicine names with doses or any prescription. Every point must cite a given source id. " +
   "If something needs a clinician, say that it is worth discussing with a clinician. ";
 
+// Wellbeing experts answer the question asked (live run 2026-10-30: "how much strength training" came back as
+// general options without the figures the sources gave).
+export const ANSWER_DIRECTLY =
+  "Answer the relay's question directly. Your first point gives the concrete figures your sources state for it " +
+  "(for example days a week, minutes, sets, repetitions or rest days), with the source ids. " +
+  "If your sources lack a figure the question asks for, say so in caveats and set search_query to find it. " +
+  "Leave out general advice the question did not ask for. ";
+
 const wellbeing = (id, field, scope) => ({
   id, field, kind: "wellbeing", scope, bank: id,
-  systemPrompt: `${SHARED}Your field: ${field}. Scope: ${scope}. ${EXPERT_REPLY_CONTRACT}`,
+  systemPrompt: `${SHARED}${ANSWER_DIRECTLY}Your field: ${field}. Scope: ${scope}. ${EXPERT_REPLY_CONTRACT}`,
 });
 
 const medical = (id, field, scope) => ({
@@ -30,7 +38,8 @@ const medical = (id, field, scope) => ({
 
 export const EXPERTS = Object.freeze([
   wellbeing("diet", "diet and nutrition", "eating patterns, hydration, meal timing, general nutrition guidelines"),
-  wellbeing("training", "training and movement", "exercise volume, recovery, walking, strength and mobility basics"),
+  wellbeing("training", "training and movement",
+    "weekly exercise amounts, strength and muscle training, running, workout recovery and rest days, stretching, walking"),
   wellbeing("breath_stress", "breathing, meditation and stress", "breathwork, relaxation, mindfulness, daily stress load"),
   wellbeing("sleep_lifestyle", "sleep and lifestyle", "sleep habits, light, caffeine and alcohol timing, routines"),
   medical("cardiology", "heart and circulation", "resting heart rate, heart rate variability, blood pressure basics"),

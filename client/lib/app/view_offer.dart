@@ -4,7 +4,8 @@
 /// posted to the chat thread. Only a yes, typed or tapped, mints an
 /// [OfferToken], and [ViewHost.open] takes nothing else, so no view can open
 /// without a yes. One offer is open at a time; a no, a new turn or
-/// [ViewOffer.timeout] without an answer cancels it. Logs carry codes only.
+/// [ViewOffer.timeout] (90 s) without an answer cancels it. Logs carry
+/// codes only.
 library;
 
 import 'dart:async';
@@ -57,7 +58,6 @@ class ViewOffer {
     required this.host,
     required this.post,
     this.resolved,
-    this.timeout = const Duration(seconds: 30),
     OfferTimer? timer,
     void Function(String line)? log,
   })  : _timer = timer ?? _realTimer,
@@ -71,7 +71,11 @@ class ViewOffer {
   /// Called once per offer: true for yes, false for no, null for a cancel
   /// (timeout or a new turn).
   final OfferResolved? resolved;
-  final Duration timeout;
+
+  /// How long an offer waits for its answer (lead decision 2026-10-30): long
+  /// enough to read the question and type a yes. The typed council offer
+  /// waits as long (councilOfferTimeout in council_flow.dart).
+  static const timeout = Duration(seconds: 90);
   final OfferTimer _timer;
   final void Function(String line) _log;
 

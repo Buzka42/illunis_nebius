@@ -82,6 +82,7 @@ abstract final class LogKeys {
   static const saveYes = ValueKey('log-save-yes');
   static const saveNo = ValueKey('log-save-no');
   static const total = ValueKey('log-total');
+  static const previewTotal = ValueKey('log-preview-total');
   static const empty = ValueKey('log-empty');
   static const checked = ValueKey('log-checked');
   static const choiceDiscard = ValueKey('log-choice-discard');
@@ -209,8 +210,11 @@ class LogLine extends StatelessWidget {
 /// reply serif with tabular figures, the words between in small ink2. The
 /// plain text is the total line as written.
 class LogTotal extends StatelessWidget {
-  const LogTotal(this.text, {super.key});
+  const LogTotal(this.text, {super.key, this.rowKey = LogKeys.total});
   final String text;
+
+  /// The day's total, or [LogKeys.previewTotal] under an unsaved preview.
+  final Key rowKey;
 
   /// A number standing on its own (`1,389.5`, `1:45:30`), not part of a
   /// word such as `7-day`.
@@ -230,7 +234,7 @@ class LogTotal extends StatelessWidget {
     }
     if (at < text.length) spans.add(TextSpan(text: text.substring(at)));
     return Container(
-      key: LogKeys.total,
+      key: rowKey,
       margin: const EdgeInsets.only(top: Space.s8),
       padding: const EdgeInsets.only(top: Space.s8),
       decoration: BoxDecoration(border: Border(top: BorderSide(color: p.rule, width: hairline(context)))),
@@ -496,7 +500,8 @@ class _LogDayViewState extends State<LogDayView> {
             ]),
           CapturePreview(:final entry, :final checkedAgainst) =>
             Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              rows(0.3, widget.rows([entry])),
+              // Each item with its calories, then the entry's own total.
+              rows(0.3, [...widget.rows([entry]), LogTotal(widget.total([entry]), rowKey: LogKeys.previewTotal)]),
               if (checkedAgainst != null)
                 Text(
                   CaptureText.checkedAgainst(checkedAgainst),

@@ -92,14 +92,16 @@ export async function gateWithRepair(text, repairFn) {
 // The model decides when the medical line applies (owner, 2026-10-29). Only guidance whose wrong use could cause
 // harm counts; general wellbeing talk does not. The reply model marks such answers with HEALTH_MARKER as its first
 // tokens; the server strips the marker and appends NOT_MEDICAL_ADVICE after the gate. The council relay uses the
-// same scope for its JSON `medical` flag.
+// same scope for its JSON `medical` flag. Everyday training questions (how often, how long, sets, rest, stretching)
+// are wellbeing: live run 2026-10-30 marked "how long should I rest between hard workouts" as medical.
 export const HEALTH_MARKER = "[[HEALTH]]";
 export const HEALTH_HARM_SCOPE =
   "health guidance whose wrong use could cause harm (a medicine, a dose, a diagnosis, a symptom that may need care, " +
   "stopping or starting a treatment, a breathing or exercise practice for a person with a condition, or anything " +
   "about a serious or new symptom)";
 export const HEALTH_WELLBEING_SCOPE =
-  "general wellbeing talk (sleep habits, a walk, a breathing exercise to relax, journaling, a question about how someone feels)";
+  "general wellbeing talk (sleep habits, a walk, a breathing exercise to relax, journaling, a question about how someone feels, " +
+  "or everyday training for a healthy adult: how often, how long, sets, rest days, running or stretching)";
 export const HEALTH_MARKER_PROMPT =
   `When your answer gives ${HEALTH_HARM_SCOPE}, begin the reply with the marker ${HEALTH_MARKER} on its own, then the answer. ` +
   `For ${HEALTH_WELLBEING_SCOPE} do not use the marker. Never write a medical disclaimer yourself.`;

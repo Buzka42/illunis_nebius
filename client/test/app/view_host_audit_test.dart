@@ -64,10 +64,13 @@ const views = <ViewKind, (String, Key)>{
 };
 
 class Rig {
-  Rig(this.t, {this.withLogs = true, this.breathStore, this.reduceMotion = true});
+  Rig(this.t, {this.withLogs = true, this.breathStore, this.reduceMotion = true, this.realTimer = false});
   final WidgetTester t;
   final bool withLogs;
   final bool reduceMotion;
+
+  /// The offer's own timer ([ViewOffer.timeout]) on the test's fake clock.
+  final bool realTimer;
   final InMemoryStateStore? breathStore;
   final host = ViewHost();
   late final thread = ChatThread(store: InMemoryStateStore());
@@ -76,7 +79,7 @@ class Rig {
     post: thread.addOffer,
     resolved: (id, a) => thread.closeOffer(
         id, a == true ? OfferState.accepted : (a == false ? OfferState.declined : OfferState.closed)),
-    timer: (d, f) => _NoTimer(),
+    timer: realTimer ? null : (d, f) => _NoTimer(),
     log: (_) {},
   );
   int offers = 0;
@@ -297,5 +300,183 @@ void main() {
     await r.tap(ValueKey('offer-${r.offer.openOfferId}-yes'));
     expect(t.widget<Opacity>(viewOpacity()).opacity, 1);
     expect(find.text(PlaceholderView.text), findsOneWidget);
+  });
+
+  // The demo path, typed end to end in the real IllunisRoot at 360 px with
+  // the real fonts: "do box breathing", the offer, a yes 40 s later, the
+  // typed onboarding, then the session on the open sky.
+  group('breathwork end to end, typed', () {
+    Future<void> answer(WidgetTester t, String text) async {
+      await t.enterText(find.byKey(BreathView.answerKey), text);
+      await t.testTextInput.receiveAction(TextInputAction.done);
+      await t.pump();
+      await t.pump();
+    }
+
+    Future<Rig> offered(WidgetTester t, InMemoryStateStore store) async {
+      final r = Rig(t, breathStore: store, reduceMotion: false, realTimer: true);
+      await r.pump();
+      await r.send('do box breathing');
+      expect(find.text('Open box breathing?'), findsOneWidget);
+      expect(r.host.current, isNull);
+      return r;
+    }
+
+    Future<void> openWithYes(WidgetTester t, Rig r) async {
+      await r.send('yes');
+      await t.pump(Motion.viewIn);
+      expect(find.byType(BreathView), findsOneWidget);
+    }
+
+    String status(WidgetTester t) => t
+        .widgetList<Text>(find.byType(Text))
+        .map((w) => w.data ?? '')
+        .firstWhere((s) => s.endsWith(' left') || s.startsWith('Getting ready') || s.startsWith('Paused.'));
+
+    testWidgets('offer, a yes after 40 s, the typed onboarding, then the session; Pause, Stop and Close',
+        (t) async {
+      final store = InMemoryStateStore();
+      final r = await offered(t, store);
+      await t.pump(const Duration(seconds: 40));
+      expect(r.offer.offerOpen, isTrue, reason: 'still open at 40 s');
+      await openWithYes(t, r);
+      expect(r.thread.entries.firstWhere((e) => e.offer != null).offer!.state, OfferState.accepted);
+
+      // One question a screen; typed answers; "not sure" asks again.
+      expect(find.text(introText), findsOneWidget);
+      expectFits(t, reason: 'intro');
+      await answer(t, 'yes');
+      expect(find.text(howText), findsOneWidget);
+      expectFits(t, reason: 'how');
+      await answer(t, 'yes');
+      expect(find.text(screenQuestion), findsOneWidget);
+      await answer(t, 'not sure');
+      expect(find.text(screenQuestion), findsOneWidget);
+      expect(find.text(BreathView.missText), findsOneWidget);
+      expectFits(t, reason: 'screen, missed');
+      await answer(t, 'no');
+      expect(find.text(advancedQuestion), findsOneWidget);
+      expect(find.text(BreathView.missText), findsNothing);
+      await answer(t, 'not sure');
+      expect(find.text(advancedQuestion), findsOneWidget);
+      expect(find.text(BreathView.missText), findsOneWidget);
+      expectFits(t, reason: 'advanced, missed');
+      await answer(t, 'no');
+      expect(find.text('Start Box, fixed count now?'), findsOneWidget);
+      expect(find.byKey(BreathView.visualKey), findsNothing);
+      expectFits(t, reason: 'start');
+      final saved = BreathProfile.decode(await store.getString(breathProfileKey))!;
+      expect(saved.advanced, isFalse);
+      expect(saved.cleared, {ScreenKind.standard});
+
+      // The session: count-in, then the phases and the countdown.
+      await answer(t, 'yes');
+      await t.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(BreathView.visualKey), findsOneWidget);
+      expect(status(t), 'Getting ready: breath 1 of 3');
+      expect(r.composerUsable, isFalse);
+
+      final sky = t.getRect(find.byKey(BreathView.skyKey));
+      final ring = t.getRect(find.byKey(BreathView.visualKey));
+      final close = t.getRect(find.byKey(BreathView.closeKey));
+      expect((ring.center.dx - 180).abs(), lessThan(0.5), reason: 'ring centred across');
+      expect((ring.center.dy - sky.center.dy).abs(), lessThan(0.5), reason: 'ring centred in the sky');
+      expect(ring.overlaps(close), isFalse);
+      expect(sky.top, greaterThanOrEqualTo(close.bottom));
+      expectFits(t, reason: 'count-in');
+
+      await t.pump(const Duration(seconds: 48)); // 3 x 16 s count-in
+      await t.pump(const Duration(milliseconds: 100));
+      expect(status(t), '5:00 left');
+      expect(find.text('Breathe in'), findsOneWidget);
+      await t.pump(const Duration(seconds: 4));
+      expect(find.text('Pause, if comfortable'), findsOneWidget);
+      await t.pump(const Duration(seconds: 4));
+      expect(find.text('Breathe out'), findsOneWidget);
+      expect(status(t), '4:52 left');
+      expect(t.getRect(find.byKey(BreathView.visualKey)), ring, reason: 'the ring keeps its place');
+      expectFits(t, reason: 'running');
+
+      // Pause holds the clock; Resume carries on.
+      await r.tap(BreathView.pauseKey);
+      expect(find.text('Resume'), findsOneWidget);
+      expect(status(t), 'Paused. 4:52 left');
+      await t.pump(const Duration(seconds: 5));
+      expect(status(t), 'Paused. 4:52 left');
+      await r.tap(BreathView.pauseKey);
+      expect(find.text('Pause'), findsOneWidget);
+      await t.pump(const Duration(seconds: 2));
+      expect(status(t), '4:50 left');
+
+      // Stop ends at once with the end copy; Close returns to the sky.
+      await r.tap(BreathView.stopKey);
+      expect(find.text(lib.byId('box_breathing')!.copy.end), findsOneWidget);
+      expect(find.byKey(BreathView.visualKey), findsNothing);
+      expectFits(t, reason: 'end');
+      await r.tap(BreathView.closeKey);
+      await t.pump(Motion.viewOut);
+      await t.pump(const Duration(milliseconds: 16)); // the fade's last frame
+      expect(r.host.current, isNull);
+      expect(find.byType(BreathView), findsNothing);
+      expect(r.composerUsable, isTrue);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('Close mid-session ends it and returns to the sky', (t) async {
+      final store = InMemoryStateStore();
+      await store.setString(breathProfileKey,
+          const BreathProfile(advanced: false, cleared: {ScreenKind.standard}).encode());
+      final r = await offered(t, store);
+      await openWithYes(t, r);
+      await answer(t, 'yes'); // Start Box, fixed count now?
+      await t.pump(const Duration(seconds: 52));
+      expect(find.byKey(BreathView.visualKey), findsOneWidget);
+      await r.tap(BreathView.closeKey);
+      await t.pump(Motion.viewOut);
+      await t.pump(const Duration(milliseconds: 16)); // the fade's last frame
+      expect(r.host.current, isNull);
+      expect(find.byType(BreathView), findsNothing);
+      expect(r.composerUsable, isTrue);
+      await t.pump(const Duration(seconds: 10));
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('a typed yes on the default screen shows the clinician notice and no session', (t) async {
+      final store = InMemoryStateStore();
+      final r = await offered(t, store);
+      await openWithYes(t, r);
+      await answer(t, 'yes'); // intro
+      await answer(t, 'yes'); // how
+      expect(find.text(screenQuestion), findsOneWidget);
+      await answer(t, 'yes'); // screen: yes
+      expect(find.text('This session will not start.'), findsOneWidget);
+      expect(find.text(lib.byId('box_breathing')!.copy.notice), findsOneWidget);
+      expect(find.byKey(BreathView.yesKey), findsNothing);
+      expect(find.byKey(BreathView.visualKey), findsNothing);
+      expect(await store.getString(breathProfileKey), isNull, reason: 'nothing stored');
+      expectFits(t, reason: 'notice');
+      await r.tap(BreathView.closeKey);
+      await t.pump(Motion.viewOut);
+      await t.pump(const Duration(milliseconds: 16)); // the fade's last frame
+      expect(r.host.current, isNull);
+      expect(r.composerUsable, isTrue);
+    });
+
+    testWidgets('a no to the offer opens nothing; 90 s without an answer closes it', (t) async {
+      final r = await offered(t, InMemoryStateStore());
+      await r.send('no');
+      expect(r.host.current, isNull);
+      expect(r.thread.entries.firstWhere((e) => e.offer != null).offer!.state, OfferState.declined);
+
+      await r.send('do box breathing');
+      await t.pump(const Duration(seconds: 89));
+      expect(r.offer.offerOpen, isTrue);
+      await t.pump(const Duration(seconds: 1));
+      expect(r.offer.offerOpen, isFalse);
+      expect(r.thread.entries.lastWhere((e) => e.offer != null).offer!.state, OfferState.closed);
+      await r.send('yes');
+      expect(r.host.current, isNull);
+      expect(find.byType(BreathView), findsNothing);
+    });
   });
 }

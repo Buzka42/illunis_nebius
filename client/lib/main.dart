@@ -31,9 +31,13 @@ import 'app/memory_writer.dart';
 import 'core/fog_settings.dart';
 import 'core/voice_flags.dart';
 import 'health/analysis_input.dart';
+import 'logs/chat_food_log.dart';
+import 'logs/log_capture.dart';
+import 'logs/log_entry.dart';
 import 'logs/log_store.dart';
 import 'logs/views/log_views.dart';
 import 'health/checkin.dart';
+import 'health/daily_signals.dart' show dayKey;
 import 'health/health_port.dart';
 import 'health/health_setup.dart';
 import 'health/imported_signals.dart';
@@ -143,6 +147,8 @@ Future<void> main() async {
   // must not hold the screen, and startCapture needs the visible activity.
   // Views open only through ViewHost.open, after a yes (ViewOffer below).
   final views = ViewHost();
+  // One store: the chat's meal lines and the log views read and write it.
+  final logStore = LogStore(store);
   runApp(IllunisRoot(
       controller: controller,
       ticker: ticker,
@@ -151,7 +157,7 @@ Future<void> main() async {
       chat: voiceEnabled ? null : thread,
       views: views,
       logs: LogViews(
-          store: LogStore(store),
+          store: logStore,
           server: server,
           signals: () async => (await ChannelHealthPort().readDaily(days: 7)).days)));
 
@@ -288,7 +294,7 @@ Future<void> main() async {
       });
   // Typed chat: the council offer is a Yes / No bubble that closes with the
   // offer (a typed or tapped answer, or the timeout).
-  final councilTimeout = voiceEnabled ? const Duration(seconds: 8) : const Duration(seconds: 30);
+  final councilTimeout = councilOfferTimeout(voice: voiceEnabled);
   var councilOffers = 0;
   Future<bool> councilPrompt(String text) async {
     if (voiceEnabled || text != CouncilPrompt.offer) return controller.speakAside(text);
@@ -383,6 +389,28 @@ Future<void> main() async {
     },
   );
 
+  // A typed meal line is logged, not answered: the preview and Save? show in
+  // the chat; only that yes saves. No view opens (seeing the log is its own
+  // offer above).
+  final foodLog = ChatFoodLog(
+    capture: LogCapture(
+      kind: LogKind.food,
+      server: server,
+      store: logStore,
+      date: () => dayKey(DateTime.now()),
+    ),
+    chat: ChatLogPort(
+      say: thread.addAssistant,
+      ask: thread.addOffer,
+      close: (id, answered) => thread.closeOffer(id, switch (answered) {
+        true => OfferState.accepted,
+        false => OfferState.declined,
+        null => OfferState.closed,
+      }),
+      note: thread.attachSources,
+    ),
+  );
+
   Future<void> offerNext() async {
     // Only when the interview is done and unanswered; never with voice off.
     if (voiceEnabled) await wakePhrase.offer();
@@ -399,6 +427,12 @@ Future<void> main() async {
     // An open approval takes every transcript (only a clear yes confirms),
     // then the council offer's yes or no.
     if (approval.claim(text)) return true;
+    // A typed meal line, or the answer to its Save? or calorie choice
+    // (typed chat only). It goes before the view offer, which it cancels.
+    if (!voiceEnabled && !setup.active && foodLog.claim(text)) {
+      viewOffer.cancel();
+      return true;
+    }
     // An open view offer's yes or no, or a new view request.
     if (!setup.active && viewOffer.claim(text)) return true;
     if (!setup.active && council.claim(text)) return true;

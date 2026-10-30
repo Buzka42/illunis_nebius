@@ -3,6 +3,7 @@ import 'package:illunis_client/app/app_controller.dart';
 import 'package:illunis_client/app/council_flow.dart';
 import 'package:illunis_client/app/persistence.dart';
 import 'package:illunis_client/app/server_port.dart';
+import 'package:illunis_client/app/view_offer.dart';
 import 'package:illunis_client/memory/short_term_memory.dart';
 
 import 'w5_fakes.dart';
@@ -60,6 +61,26 @@ void main() {
     expect(flow.offerOpen, isTrue);
     expect(timers.active.single.after, const Duration(seconds: 8));
     expect(server.councilCalls, isEmpty);
+  });
+
+  test('typed, the offer waits as long as a view offer (90 s); spoken, 8 s', () async {
+    expect(councilOfferTimeout(voice: false), const Duration(seconds: 90));
+    expect(councilOfferTimeout(voice: false), ViewOffer.timeout);
+    expect(councilOfferTimeout(voice: true), const Duration(seconds: 8));
+    flow = CouncilFlow(
+      server: server,
+      speaker: CouncilSpeaker(speak: sp.speak, caption: sp.caption),
+      speak: sp.speak,
+      answerTimeout: councilOfferTimeout(voice: false),
+      timer: timers.call,
+      log: (_) {},
+    );
+    await offered(big);
+    expect(timers.active.single.after, const Duration(seconds: 90));
+    // A yes before the timer fires (40 s in) still runs the council.
+    expect(flow.claim('yes'), isTrue);
+    await flow.settled;
+    expect(server.councilRequests.single.question, big);
   });
 
   test('an ordinary question gets no offer; the reply flag alone does', () async {

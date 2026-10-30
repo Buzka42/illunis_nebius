@@ -129,7 +129,9 @@ LogEntry _useFound(LogEntry e, Iterable<FoodChoice> found) {
   final items = [...e.items];
   for (final c in found) {
     final i = items[c.itemIndex];
-    items[c.itemIndex] = FoodItem(name: i.name, quantity: i.quantity, unit: i.unit, kcal: c.foundValue.toDouble());
+    // The source's figure, not one the user stated: it keeps the "est." label.
+    items[c.itemIndex] =
+        FoodItem(name: i.name, quantity: i.quantity, unit: i.unit, kcal: c.foundValue.toDouble(), estimated: true);
   }
   return FoodEntry(date: e.date, source: e.source, meal: e.meal, items: items);
 }
@@ -158,6 +160,10 @@ class LogCapture extends ChangeNotifier {
   CaptureState _state = const CaptureIdle();
   CaptureState get state => _state;
   bool _disposed = false;
+
+  /// Bumped by each parse and by [reset]; a parse whose number is stale
+  /// when it lands is dropped.
+  int _seq = 0;
 
   void _set(CaptureState s) {
     _state = s;
@@ -214,6 +220,16 @@ class LogCapture extends ChangeNotifier {
     _set(CaptureChoice(entry, rest, checkedAgainst: s.checkedAgainst));
   }
 
+  /// Drops whatever is open (a preview or a choice) unsaved and goes back to
+  /// waiting, with no message. A parse still in flight is dropped when it
+  /// lands.
+  void reset() {
+    if (_state is CaptureIdle) return;
+    _seq++;
+    if (_state is CapturePreview || _state is CaptureChoice) _log('log: discarded kind=${kind.wire}');
+    _set(const CaptureIdle());
+  }
+
   /// The Save? answer. Does nothing without a preview.
   Future<void> answer(bool yes) async {
     final s = _state;
@@ -233,15 +249,17 @@ class LogCapture extends ChangeNotifier {
   }
 
   Future<void> _parse(String text) async {
+    final seq = ++_seq;
     _set(const CaptureReading());
     final LogParseResult r;
     try {
       r = await server.parseLog(kind.wire, text, prefs: {'effort': effortFor(kind, text, effort)}, date: date());
     } catch (_) {
+      if (seq != _seq) return;
       _log('log: parse_failed kind=${kind.wire}');
       return _set(const CaptureMessage(CaptureText.unavailable));
     }
-    if (_disposed) return;
+    if (_disposed || seq != _seq) return;
     if (r.crisis) {
       _log('log: crisis');
       return _set(CaptureCrisis(r.referral!));

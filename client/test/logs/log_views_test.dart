@@ -190,6 +190,34 @@ void main() {
     expect(find.byKey(LogKeys.saveYes), findsNothing);
   });
 
+  testWidgets('food preview: each item with its calories (est. on an estimate) and the entry total', (t) async {
+    final env = envelope('food', {
+      'meal': 'lunch',
+      'items': [
+        {'name': 'cooked rice', 'quantity': 200, 'unit': 'g', 'kcal': 260, 'kcal_estimated': true},
+        {'name': 'eggs', 'quantity': 2, 'unit': 'piece', 'kcal': 144, 'kcal_estimated': true},
+        {'name': 'whole milk', 'quantity': 250, 'unit': 'ml', 'kcal': 150},
+      ],
+    });
+    final server = FakeServerPort()..logParseResult = LogParseResult.parsed(Map<String, dynamic>.from(env));
+    final d = deps(server: server);
+    await pumpView(t, ViewKind.food, d);
+    await t.enterText(find.byKey(LogKeys.field), '200 g cooked rice and two eggs for lunch, 250 ml whole milk 150 kcal');
+    await t.tap(find.byKey(LogKeys.send));
+    await t.pumpAndSettle();
+    expect(find.text('200 g · 260 kcal est.'), findsOneWidget);
+    expect(find.text('2 pieces · 144 kcal est.'), findsOneWidget);
+    expect(find.text('250 ml · 150 kcal'), findsOneWidget);
+    final total = t.widget<Text>(find.descendant(of: find.byKey(LogKeys.previewTotal), matching: find.byType(Text)));
+    expect(total.textSpan!.toPlainText(), '3 items · 554 kcal in all · 150 kcal stated for 1 of 3 · 2 estimated (404 kcal)');
+    expect(find.byKey(LogKeys.total), findsNothing);
+    await t.tap(find.byKey(LogKeys.saveYes));
+    await t.pumpAndSettle();
+    expect(find.byKey(LogKeys.previewTotal), findsNothing);
+    expect(totalText(t), '3 items · 554 kcal in all · 150 kcal stated for 1 of 3 · 2 estimated (404 kcal)');
+    expect(t.takeException(), isNull);
+  });
+
   testWidgets('previous day shows that day; close calls back', (t) async {
     await pumpView(t, ViewKind.run, deps(entries: [run]));
     expect(find.byKey(LogKeys.nextDay), findsNothing);

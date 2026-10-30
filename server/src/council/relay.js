@@ -67,13 +67,25 @@ export const consultTool = (env = {}) => ({
   },
 });
 
+// chat (live run 2026-10-30): open with the answer and its figures, plain prose, no generic filler.
+export const CHAT_ANSWER_RULE =
+  "Your first sentence answers the question directly, with the figures from the consult results (for example " +
+  "days a week, minutes, sets or rest days). Use only figures that appear in the experts' points or their web " +
+  "results; never add one of your own. Then say briefly how to do it, without repeating yourself. Speak to the user " +
+  "about the answer, never about the experts or what they did not say. Plain prose only: no markdown, no lists, " +
+  "no headings. Do not hedge and do not add general advice the question did not ask for.";
 const PURPOSE_LINES = {
-  chat: "The user asked a big question in conversation. Answer it in three to six short spoken sentences.",
+  chat: `The user asked a big question in conversation. Answer it in three to six short spoken sentences. ${CHAT_ANSWER_RULE}`,
   digest: "This is the morning digest. Give two to four short spoken sentences: what stands out and one gentle option.",
   analysis:
     "This is a comment on 21-day findings. Use only numbers that appear in the findings, exactly as written. " +
     "Do not name causes, conditions or conclusions; call them tentative observations from check-ins.",
 };
+
+// Live run 2026-10-30: a recovery answer listed only web pages although the training bank was cited by the expert.
+export const SOURCES_RULE =
+  "In sources, list the knowledge-bank ids your answer relies on first; add a web id only when your answer uses " +
+  "something from that web source.";
 
 export function relaySystem(purpose, env = {}) {
   const roster = activeExperts(env).map((e) => `- ${e.id} (${e.kind}): ${e.field}; ${e.scope}`).join("\n");
@@ -88,6 +100,7 @@ export function relaySystem(purpose, env = {}) {
     'When done, reply with JSON only: {"synthesis":string,"experts_consulted":[string],"sources":[string source ids ' +
       `you relied on],"medical":boolean}. Set medical true only when the answer gives ${HEALTH_HARM_SCOPE}. ` +
       `Set it false for ${HEALTH_WELLBEING_SCOPE}. Never write a medical disclaimer yourself.`,
+    SOURCES_RULE,
   ].join("\n\n");
 }
 

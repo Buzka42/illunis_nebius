@@ -22,6 +22,7 @@ import '../voice/council_trigger.dart';
 import 'app_controller.dart';
 import 'aside.dart';
 import 'server_port.dart';
+import 'view_offer.dart';
 
 /// The server's NOT_MEDICAL_ADVICE (server/src/safety.js). The Worker
 /// appends it to every medical synthesis; the phone adds it again only if a
@@ -155,6 +156,11 @@ CouncilContext councilContextFrom(ShortTermMemory? shortTerm, {int turns = 6}) {
   ];
   return CouncilContext(shortTermSummary: lines.isEmpty ? null : lines.join('\n'));
 }
+
+/// How long the council offer waits for its answer: 8 s for a spoken one
+/// (the microphone listens right after the question), and as long as the
+/// view offers ([ViewOffer.timeout], 90 s) for a typed one.
+Duration councilOfferTimeout({required bool voice}) => voice ? const Duration(seconds: 8) : ViewOffer.timeout;
 
 class CouncilFlow {
   CouncilFlow({

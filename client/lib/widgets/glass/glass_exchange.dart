@@ -46,7 +46,8 @@ abstract final class ExchangeMetrics {
 /// What one exchange shows, read from its thread entries.
 @immutable
 class ExchangeContent {
-  const ExchangeContent({this.echo, this.paragraphs = const [], this.notes = const [], this.trace = const [], this.offerId});
+  const ExchangeContent(
+      {this.echo, this.paragraphs = const [], this.notes = const [], this.trace = const [], this.offerId, this.offerChoices});
 
   /// The user's own line.
   final String? echo;
@@ -63,12 +64,19 @@ class ExchangeContent {
   /// The open offer's id (Yes / No show), if any.
   final String? offerId;
 
+  /// The open offer's own answers in place of Yes / No, if it has them.
+  final List<String>? offerChoices;
+
+  /// The action labels under the open offer.
+  List<String> get offerLabels => offerChoices ?? const ['Yes', 'No'];
+
   bool get hasNotes => notes.isNotEmpty || trace.isNotEmpty;
 
   factory ExchangeContent.of(List<ChatEntry> entries) {
     String? echo;
     final paragraphs = <String>[], notes = <String>[];
     String? offer;
+    List<String>? choices;
     var trace = const <String>[];
     var disclaimer = false;
     for (final e in entries) {
@@ -83,11 +91,15 @@ class ExchangeContent {
       }
       if (text.isNotEmpty) paragraphs.add(text);
       if (e.sources case final s? when !notes.contains(s)) notes.add(s);
-      if (e.offer case final o? when o.isOpen) offer = o.id;
+      if (e.offer case final o? when o.isOpen) {
+        offer = o.id;
+        choices = o.choices;
+      }
       if (e.trace case final t?) trace = t;
     }
     if (disclaimer) notes.add(notMedicalAdviceLine);
-    return ExchangeContent(echo: echo, paragraphs: paragraphs, notes: notes, trace: trace, offerId: offer);
+    return ExchangeContent(
+        echo: echo, paragraphs: paragraphs, notes: notes, trace: trace, offerId: offer, offerChoices: choices);
   }
 }
 
@@ -134,8 +146,16 @@ double _textWidth(String text, TextStyle style, TextScaler scaler) {
 }
 
 /// Height of the Yes / No row: a 48 px target or the label's line, padded.
-double offerHeight(TextScaler scaler) =>
-    math.max(Space.target, _textHeight('Yes', TypeScale.label(_anyColour), double.infinity, scaler) + 2 * Space.s12);
+/// With [labels] in cells of [width] in all, the tallest label as it wraps.
+double offerHeight(TextScaler scaler, {List<String> labels = const ['Yes'], double width = double.infinity}) {
+  final cell = (width / labels.length - 2 * Space.s8).clamp(1.0, double.infinity);
+  final tallest = labels.map((l) => _textHeight(l, TypeScale.label(_anyColour), cell, scaler)).fold(0.0, math.max);
+  return math.max(Space.target, tallest + 2 * Space.s12);
+}
+
+/// The width that keeps every label of the action row on one line.
+double offerWidth(List<String> labels, TextScaler scaler) =>
+    labels.length * labels.map((l) => _textWidth(l, TypeScale.label(_anyColour), scaler) + 2 * Space.s8 + 1).fold(0.0, math.max);
 
 /// Height of the trace toggle row at [inner] width: a 48 px target or the
 /// title's lines beside the chevron, padded.
@@ -165,7 +185,9 @@ ExchangeFit measureExchange(ExchangeContent c,
           ExchangeMetrics.traceGlyph,
     for (final l in c.trace) _textWidth(l, note, scaler),
   ].fold(0.0, math.max).ceilToDouble() + 1 + inset.horizontal;
-  if (c.offerId != null) natural = math.max(natural, ExchangeMetrics.minOfferWidth);
+  if (c.offerId != null) {
+    natural = math.max(natural, math.max(ExchangeMetrics.minOfferWidth, offerWidth(c.offerLabels, scaler)));
+  }
   final width = math.min(natural, maxWidth);
   final inner = width - inset.horizontal;
   var h = inset.vertical;
@@ -194,7 +216,7 @@ ExchangeFit measureExchange(ExchangeContent c,
       }
     }
   }
-  if (c.offerId != null) h += offerHeight(scaler);
+  if (c.offerId != null) h += offerHeight(scaler, labels: c.offerLabels, width: width);
   return ExchangeFit(size: size, echo: showEcho, inset: inset, width: width, height: h);
 }
 
@@ -329,8 +351,14 @@ class GlassExchange extends StatelessWidget {
             ),
             if (offer != null)
               GlassActions(topRule: true, actions: [
-                GlassAction('Yes', () => onChoice('Yes'), key: ValueKey('offer-$offer-yes'), primary: true),
-                GlassAction('No', () => onChoice('No'), key: ValueKey('offer-$offer-no')),
+                if (c.offerChoices case final choices?)
+                  for (final (i, label) in choices.indexed)
+                    GlassAction(label, () => onChoice(label),
+                        key: ValueKey('offer-$offer-$i'), primary: i == choices.length - 1)
+                else ...[
+                  GlassAction('Yes', () => onChoice('Yes'), key: ValueKey('offer-$offer-yes'), primary: true),
+                  GlassAction('No', () => onChoice('No'), key: ValueKey('offer-$offer-no')),
+                ],
               ]),
           ]),
         ),

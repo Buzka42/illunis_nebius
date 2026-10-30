@@ -21,10 +21,18 @@ enum ChatRole { user, assistant }
 enum OfferState { open, accepted, declined, closed }
 
 class ChatOffer {
-  const ChatOffer(this.id, [this.state = OfferState.open]);
+  const ChatOffer(this.id, [this.state = OfferState.open, this.choices]);
   final String id;
   final OfferState state;
+
+  /// The answers shown as actions, in order (a food mismatch: "Keep mine
+  /// (400)", "Use 270"); the last is the primary one. Null is Yes / No.
+  /// A tap submits the label as typed text, like Yes and No.
+  final List<String>? choices;
+
   bool get isOpen => state == OfferState.open;
+
+  ChatOffer withState(OfferState s) => ChatOffer(id, s, choices);
 }
 
 @immutable
@@ -54,7 +62,7 @@ class ChatEntry {
         'role': role.name,
         'text': text,
         'sources': ?sources,
-        if (offer != null) 'offer': {'id': offer!.id, 'state': offer!.state.name},
+        if (offer != null) 'offer': {'id': offer!.id, 'state': offer!.state.name, 'choices': ?offer!.choices},
         'trace': ?trace,
       };
 
@@ -70,7 +78,10 @@ class ChatEntry {
     ChatOffer? offer;
     if (o is Map<String, dynamic> && o['id'] is String) {
       final st = OfferState.values.asNameMap()[o['state']] ?? OfferState.closed;
-      offer = ChatOffer(o['id'] as String, st == OfferState.open ? OfferState.closed : st);
+      final ch = o['choices'];
+      final choices = ch is List ? ch.whereType<String>().toList() : null;
+      offer = ChatOffer(o['id'] as String, st == OfferState.open ? OfferState.closed : st,
+          choices == null || choices.isEmpty ? null : List.unmodifiable(choices));
     }
     final tr = j['trace'];
     final trace = tr is List ? tr.whereType<String>().toList() : null;
@@ -140,7 +151,7 @@ class ChatThread extends ChangeNotifier {
     if (t.isEmpty) return;
     for (var i = 0; i < _entries.length; i++) {
       final o = _entries[i].offer;
-      if (o != null && o.isOpen) _entries[i] = _entries[i].copyWith(offer: ChatOffer(o.id, OfferState.closed));
+      if (o != null && o.isOpen) _entries[i] = _entries[i].copyWith(offer: o.withState(OfferState.closed));
     }
     _add(ChatEntry(role: ChatRole.user, text: t));
   }
@@ -163,15 +174,18 @@ class ChatThread extends ChangeNotifier {
     _add(ChatEntry(role: ChatRole.assistant, text: t));
   }
 
-  /// A yes/no question in its own bubble.
-  void addOffer(String text, String offerId) =>
-      _add(ChatEntry(role: ChatRole.assistant, text: text.trim(), offer: ChatOffer(offerId)));
+  /// A yes/no question in its own bubble; [choices] replaces Yes / No with
+  /// those answers.
+  void addOffer(String text, String offerId, {List<String>? choices}) => _add(ChatEntry(
+      role: ChatRole.assistant,
+      text: text.trim(),
+      offer: ChatOffer(offerId, OfferState.open, choices == null ? null : List.unmodifiable(choices))));
 
   /// Sets the state of offer [offerId]. No-op when it is not in the thread.
   void closeOffer(String offerId, OfferState state) {
     final i = _entries.lastIndexWhere((e) => e.offer?.id == offerId);
     if (i < 0 || _entries[i].offer!.state == state) return;
-    _entries[i] = _entries[i].copyWith(offer: ChatOffer(offerId, state));
+    _entries[i] = _entries[i].copyWith(offer: _entries[i].offer!.withState(state));
     _changed();
   }
 

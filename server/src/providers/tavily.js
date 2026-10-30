@@ -45,7 +45,8 @@ function statusCode(status) {
 }
 
 // Returns { answer, results: [{title, url, content}] }. Throws ProviderError with one fixed code.
-export async function searchTavily(query, env = {}, { fetchFn = fetch, timeoutMs = 8000, maxResults = 5, role = "search" } = {}) {
+// excludeDomains: optional list sent as Tavily's exclude_domains (the council leaves out forums and video sites).
+export async function searchTavily(query, env = {}, { fetchFn = fetch, timeoutMs = 8000, maxResults = 5, role = "search", excludeDomains } = {}) {
   const problem = tavilyConfigProblem(env, role);
   if (problem) throw new ProviderError(problem.includes("refused") ? "tavily_refused" : "tavily_not_configured");
   let res;
@@ -59,6 +60,7 @@ export async function searchTavily(query, env = {}, { fetchFn = fetch, timeoutMs
         max_results: Math.min(Math.max(1, Math.trunc(maxResults)), 10),
         include_answer: true,
         include_raw_content: false,
+        ...(Array.isArray(excludeDomains) && excludeDomains.length ? { exclude_domains: [...excludeDomains] } : {}),
       }),
       signal: AbortSignal.timeout(Math.max(1, timeoutMs)),
     });

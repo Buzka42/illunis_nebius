@@ -215,10 +215,18 @@ abstract final class TypeScale {
   /// the sky, softer than the full inverse. A stroke shows `a + d - 2ad` per channel over sky `d`.
   static const double inverseOpacity = 0.8;
 
-  /// The paint of inverse text: white at [inverseOpacity], [BlendMode.difference].
-  static Paint inversePaint() => Paint()
-    ..color = const Color.from(alpha: inverseOpacity, red: 1, green: 1, blue: 1)
+  /// The most the white may be raised to over a mid-tone sky ([solveInk], readability pass 2026-10-30).
+  static const double inverseMax = 1.0;
+
+  /// The paint of inverse text: white at [opacity] ([inverseOpacity] unless the sky behind asks for more,
+  /// [solveInk]), [BlendMode.difference].
+  static Paint inversePaint([double opacity = inverseOpacity]) => Paint()
+    ..color = Color.from(alpha: opacity, red: 1, green: 1, blue: 1)
     ..blendMode = BlendMode.difference;
+
+  /// [style] with its inverse white at [opacity]; any other style as it is.
+  static TextStyle atOpacity(TextStyle style, double opacity) =>
+      isInverse(style) && style.foreground!.color.a != opacity ? style.copyWith(foreground: inversePaint(opacity)) : style;
 
   /// True when [style] draws inverse-colour text (tests and audits).
   static bool isInverse(TextStyle? style) => style?.foreground?.blendMode == BlendMode.difference;
@@ -263,11 +271,13 @@ abstract final class Halo {
   static const double tight = 2, wide = 8;
 
   /// How much of the halo colour sits right beside a stroke at full
-  /// strength, as a fraction of [Palette.halo]'s alpha. Measured, not
-  /// guessed: halo_test renders every step with the halo over flat skies and
-  /// reads the pixels next to the strokes; this is the smallest it found,
-  /// rounded down.
-  static const double reach = 0.33;
+  /// strength, as a fraction of the shadows' own alpha ([alpha]). Measured,
+  /// not guessed: halo_test renders every step with the halo over flat skies
+  /// and reads the pixels next to the strokes (0.45 to 0.51, night and day,
+  /// readability pass 2026-10-30); this is the smallest it found, rounded
+  /// down. Weaker halos reach relatively further (the three layers saturate
+  /// least), so the full-strength share is the safe one.
+  static const double reach = 0.44;
 
   /// Strength with no look at the sky (no SkyLight: tests, voice builds).
   static const double unknown = 1;
@@ -275,8 +285,7 @@ abstract final class Halo {
   /// The shadows for [halo] at [strength] (0 none .. 1 full).
   static List<Shadow> shadows(Color halo, double strength) {
     if (strength <= 0) return const [];
-    final s = strength.clamp(0.0, 1.0);
-    final c = halo.withValues(alpha: (halo.a * s * boost).clamp(0.0, 1.0));
+    final c = halo.withValues(alpha: alpha(halo, strength));
     // Readability pass (owner, 2026-10-30): a third, wider layer and a stronger edge, so dark ink keeps its letters over
     // deep blue patches of the day sky. Over white cloud the edge is invisible.
     return [
@@ -290,21 +299,25 @@ abstract final class Halo {
   static const double boost = 1.6;
   static const double wider = 16;
 
+  /// The alpha each shadow of [halo] at [strength] is drawn with: the
+  /// halo's own alpha times [strength] and [boost], at most 1.
+  static double alpha(Color halo, double strength) => (halo.a * strength.clamp(0.0, 1.0) * boost).clamp(0.0, 1.0);
+
   /// The sky right beside a stroke of text with [halo] at [strength] over
   /// [sky]: what the ink is read against.
   static Color behind(Color halo, double strength, Color sky) =>
-      Color.alphaBlend(halo.withValues(alpha: halo.a * reach * strength.clamp(0.0, 1.0)), sky);
+      Color.alphaBlend(halo.withValues(alpha: alpha(halo, strength) * reach), sky);
 
   /// How much of the halo colour lies under a stroke at full strength, as a
-  /// fraction of [Palette.halo]'s alpha: what inverse text inverts. Measured
-  /// like [reach] (halo_test reads the stroke cores): 0.81 to 0.88 by day,
-  /// above 1 at night (the [boost]), the smallest rounded down.
+  /// fraction of [alpha]: what inverse text inverts. Measured like [reach]
+  /// (halo_test reads the stroke cores): 0.82 to 0.93, night and day, the
+  /// smallest rounded down.
   static const double cover = 0.8;
 
   /// The colour under a stroke of text with [halo] at [strength] over [sky]:
   /// inverse text shows [inverseOf] this.
   static Color under(Color halo, double strength, Color sky) =>
-      Color.alphaBlend(halo.withValues(alpha: (halo.a * cover * strength.clamp(0.0, 1.0)).clamp(0.0, 1.0)), sky);
+      Color.alphaBlend(halo.withValues(alpha: alpha(halo, strength) * cover), sky);
 }
 
 /// What a stroke of inverse text ([TypeScale.inverseText]) shows over
@@ -316,32 +329,105 @@ Color inverseOf(Color under, {double opacity = TypeScale.inverseOpacity}) {
 }
 
 /// The contrast of text with [p]'s halo at [strength] over [sky], for each
-/// text: one figure for inverse text (the stroke over what is under it,
-/// against the sky beside it), else each of [Palette.texts] against the sky
-/// beside it.
-List<double> textContrasts(Palette p, double strength, Color sky) {
+/// text: one figure for inverse text (the stroke, white at [opacity], over
+/// what is under it, against the sky beside it), else each of
+/// [Palette.texts] against the sky beside it.
+List<double> textContrasts(Palette p, double strength, Color sky, {double opacity = TypeScale.inverseOpacity}) {
+  if (TypeScale.inverseText) return [inverseContrast(p.halo, strength, sky, opacity: opacity)];
   final beside = Halo.behind(p.halo, strength, sky);
-  if (TypeScale.inverseText) return [contrast(inverseOf(Halo.under(p.halo, strength, sky)), beside)];
   return [for (final t in p.texts) contrast(t, beside)];
 }
 
-/// The weakest halo, in steps of 0.05 from none, at which every text of [p]
-/// reaches [target] over every colour of [skies]; 1 (full) when even that
-/// does not, which is as far as a soft halo goes. With inverse text the
-/// halo can also hurt (a dark halo under strokes over the moon): the search
-/// from none stops at the first strength that reaches the target.
-double solveHalo(Palette p, List<Color> skies, {double target = GlassSpec.target + GlassSpec.margin}) {
-  bool ok(double s) {
-    for (final sky in skies) {
-      if (textContrasts(p, s, sky).any((c) => c < target)) return false;
-    }
-    return true;
-  }
+/// The contrast of inverse text (white at [opacity]) with [halo] at
+/// [strength] over [sky]: the stroke over what is under it, against the sky
+/// beside it.
+double inverseContrast(Color halo, double strength, Color sky, {double opacity = TypeScale.inverseOpacity}) =>
+    contrast(inverseOf(Halo.under(halo, strength, sky), opacity: opacity), Halo.behind(halo, strength, sky));
 
-  for (var i = 0; i <= 20; i++) {
-    if (ok(i / 20)) return i / 20;
+/// The halo strengths [solveHalo] and [solveInk] try, none to full.
+final _strengths = [for (var i = 0; i <= 20; i++) i / 20];
+
+/// The inverse white's opacities [solveInk] tries, [TypeScale.inverseOpacity] up to [TypeScale.inverseMax].
+final _opacities = [
+  for (var a = TypeScale.inverseOpacity; a <= TypeScale.inverseMax + 1e-9; a += 0.05) double.parse(a.toStringAsFixed(2)),
+];
+
+/// The weakest halo, in steps of 0.05 from none, at which every text of [p]
+/// reaches [target] over every colour of [skies], with the inverse white at
+/// [opacity]; 1 (full) when even that does not, which is as far as a soft
+/// halo goes. With inverse text the halo can also hurt (a dark halo under
+/// strokes over the moon): the search from none stops at the first strength
+/// that reaches the target.
+double solveHalo(Palette p, List<Color> skies,
+    {double target = GlassSpec.target + GlassSpec.margin, double opacity = TypeScale.inverseOpacity}) {
+  for (final s in _strengths) {
+    if (skies.every((sky) => textContrasts(p, s, sky, opacity: opacity).every((c) => c >= target))) return s;
   }
   return 1;
+}
+
+/// How inverse text is drawn over a stretch of sky ([solveInk]): the white
+/// at [opacity], the halo in [halo] at [strength], and the least contrast
+/// the model expects over the skies it was solved for.
+@immutable
+class SkyInkFit {
+  const SkyInkFit({required this.opacity, required this.halo, required this.strength, this.least = double.infinity});
+
+  final double opacity;
+  final Color halo;
+  final double strength;
+  final double least;
+
+  /// The owner's look (white at [TypeScale.inverseOpacity]) with [halo] at [strength]: no look at the sky.
+  const SkyInkFit.plain(this.halo, this.strength) : opacity = TypeScale.inverseOpacity, least = double.infinity;
+
+  /// The shadows that draw the halo.
+  List<Shadow> get shadows => Halo.shadows(halo, strength);
+
+  /// [a] to [b] at [t], for easing between two looks at the sky.
+  static SkyInkFit lerp(SkyInkFit a, SkyInkFit b, double t) => SkyInkFit(
+        opacity: a.opacity + (b.opacity - a.opacity) * t,
+        halo: Color.lerp(a.halo, b.halo, t)!,
+        strength: a.strength + (b.strength - a.strength) * t,
+        least: b.least,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is SkyInkFit && other.opacity == opacity && other.halo == halo && other.strength == strength;
+
+  @override
+  int get hashCode => Object.hash(opacity, halo, strength);
+
+  @override
+  String toString() => 'SkyInkFit(opacity $opacity, halo $halo at $strength, least $least)';
+}
+
+/// The inverse white and the halo for text over [skies] (the darkest and
+/// brightest sky the probe sampled under it), readability pass 2026-10-30.
+/// [halos] are the halo colours to try, the one the text's palette chose
+/// first. The owner's white ([TypeScale.inverseOpacity]) with the weakest
+/// halo that reaches [target] wherever that is enough (the night, the deep
+/// blue, white cloud, the moon). Over a mid-tone sky, whose inverse is a
+/// mid-tone too, the white is raised in steps of 0.05, up to
+/// [TypeScale.inverseMax], to the lowest opacity at which some halo
+/// reaches the target; only then is the other halo colour tried. When
+/// nothing reaches it, the opacity, colour and strength with the best
+/// worst case.
+SkyInkFit solveInk(List<Color> halos, List<Color> skies, {double target = GlassSpec.target + GlassSpec.margin}) {
+  double least(Color halo, double s, double a) =>
+      skies.map((sky) => inverseContrast(halo, s, sky, opacity: a)).fold(double.infinity, math.min);
+  SkyInkFit? best;
+  for (final halo in halos) {
+    for (final a in _opacities) {
+      for (final s in _strengths) {
+        final l = least(halo, s, a);
+        if (l >= target) return SkyInkFit(opacity: a, halo: halo, strength: s, least: l);
+        if (best == null || l > best.least + 1e-9) best = SkyInkFit(opacity: a, halo: halo, strength: s, least: l);
+      }
+    }
+  }
+  return best ?? SkyInkFit.plain(halos.first, Halo.unknown);
 }
 
 /// The 4 px grid.

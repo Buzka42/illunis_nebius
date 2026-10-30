@@ -32,7 +32,7 @@ class FakeTimer implements Timer {
     post: (p, id) => posts.add('$id $p'),
     resolved: (id, a) => results.add((id, a)),
     timer: (d, f) {
-      expect(d, const Duration(seconds: 30));
+      expect(d, ViewOffer.timeout);
       final t = FakeTimer(f);
       timers.add(t);
       return t;
@@ -94,7 +94,7 @@ void main() {
     expect(r.results, [('view-1', false)]);
   });
 
-  test('30 s without an answer cancels; a late yes opens nothing', () {
+  test('the timeout without an answer cancels; a late yes opens nothing', () {
     final r = rig();
     r.offer.claim('show my logs');
     r.timers.single.fire();
@@ -125,6 +125,37 @@ void main() {
     expect(r.offer.offerOpen, isTrue);
     r.offer.claim('yes');
     expect(r.host.current?.kind, ViewKind.breathwork);
+  });
+
+  test('an offer waits 90 s for its answer', () {
+    expect(ViewOffer.timeout, const Duration(seconds: 90));
+  });
+
+  // The real timer, on the test's fake clock.
+  testWidgets('a yes typed after 40 s still opens the view', (t) async {
+    final host = ViewHost();
+    final results = <bool?>[];
+    final offer = ViewOffer(host: host, post: (_, _) {}, resolved: (_, a) => results.add(a), log: (_) {});
+    offer.claim('do some breathing exercises');
+    await t.pump(const Duration(seconds: 40));
+    expect(offer.offerOpen, isTrue);
+    expect(offer.claim('yes'), isTrue);
+    expect(host.current?.kind, ViewKind.breathwork);
+    expect(results, [true]);
+  });
+
+  testWidgets('the offer is still open at 89 s and closed at 90 s', (t) async {
+    final host = ViewHost();
+    final results = <bool?>[];
+    final offer = ViewOffer(host: host, post: (_, _) {}, resolved: (_, a) => results.add(a), log: (_) {});
+    offer.claim('show my logs');
+    await t.pump(const Duration(seconds: 89));
+    expect(offer.offerOpen, isTrue);
+    await t.pump(const Duration(seconds: 1));
+    expect(offer.offerOpen, isFalse);
+    expect(results, [null]);
+    expect(offer.claim('yes'), isFalse);
+    expect(host.current, isNull);
   });
 
   test('cancel() closes an open offer', () {

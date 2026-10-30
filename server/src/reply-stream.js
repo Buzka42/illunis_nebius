@@ -21,7 +21,8 @@ import {
 } from "./safety.js";
 import { councilSuggested } from "./council-trigger.js";
 import {
-  REPAIR_TIMEOUT_MS, TimeoutError, callModel, isTimeout, prepareReply, repairMessages, replyEndpoint, requestBody, stripThinking,
+  MIN_OPENING, REPAIR_TIMEOUT_MS, TimeoutError, callModel, isTimeout, prepareReply, repairMessages, replyEndpoint, requestBody,
+  stripThinking,
 } from "./reply.js";
 
 export const STREAM_TIMEOUT_MS = 30_000; // whole stream, first byte included
@@ -188,10 +189,22 @@ async function* replyEvents({ personality, messages, transcript, env, fetchFn, s
     yield done(health ? withHealthLine(out.text) : out.text, out.safety, health, out.code);
   }
 
+  // A second copy of the reply (reply.js cutRepeat): once the opening sentence comes back, nothing more is taken.
+  let repeated = false;
+  const cutCopy = (s) => {
+    const opening = released[0];
+    if (!opening || opening.length < MIN_OPENING) return s;
+    const at = s.indexOf(opening);
+    if (at < 0) return s;
+    repeated = true;
+    return s.slice(0, at).trim();
+  };
+
   // Unmarks, gates and holds back the sentences. Returns the gate failure as [sentence, rule], or null.
   function* take(sentences) {
     for (const raw of sentences) {
-      const s = unmark(raw);
+      if (repeated) return null;
+      const s = cutCopy(unmark(raw));
       if (!s) continue;
       const v = gate(s);
       if (v) return [s, v];
