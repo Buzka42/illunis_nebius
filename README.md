@@ -36,9 +36,12 @@ Full notes in `server/docs/SETUP.md`. Live checks: `node server/scripts/check-de
 ## Scope and honesty
 
 - Medical experts are off in this build. Medical questions are answered without a consulted source, and say so.
-- Voice is off in this build. Replies are typed.
-- Meta and the Hermes assistant bridge are present in code but inert without their configuration.
-- Food calories are checked only when the user states a figure. Foods logged without one are saved without a calorie count.
+- Voice is off in this build; replies are typed. The goal is full duplex conversation with Illunis, speaking and listening
+  at the same time.
+- The app is to be expanded with personal AI bot support. The Meta and Hermes bridges are the first integrations: they are
+  present in code and stay inactive until they are configured.
+- Food calories: a stated figure is checked against a web source. A food logged without one gets an estimate from a web
+  source, marked as an estimate with its source. Stated figures and estimates are counted apart.
 - Tested live on a synthetic deployment; see `docs/NEBIUS_TEST_RESULTS.md`.
 
 ## Licences

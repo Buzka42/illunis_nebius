@@ -12,7 +12,7 @@ String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
 String _amount(FoodItem i) {
   final qty = [if (i.quantity != null) numText(i.quantity!), ?i.unit].join(' ');
-  return [if (qty.isNotEmpty) qty, if (i.kcal != null) '${numText(i.kcal!)} kcal'].join(' · ');
+  return [if (qty.isNotEmpty) qty, if (i.kcal != null) '${numText(i.kcal!)} kcal${i.estimated ? ' est.' : ''}'].join(' · ');
 }
 
 List<Widget> foodRows(List<LogEntry> entries) => [
@@ -25,8 +25,14 @@ List<Widget> foodRows(List<LogEntry> entries) => [
 String foodTotal(List<LogEntry> entries) {
   final t = foodTotals(entries.whereType<FoodEntry>());
   final items = '${t.items} item${t.items == 1 ? '' : 's'}';
-  if (t.stated == 0) return '$items · no calories stated';
-  return '$items · ${numText(t.kcal)} kcal stated for ${t.stated} of ${t.items}';
+  final all = entries.whereType<FoodEntry>().expand((e) => e.items);
+  final estimated = all.where((i) => i.estimated);
+  final est = estimated.length;
+  final estKcal = estimated.fold<double>(0, (a, i) => a + (i.kcal ?? 0));
+  final statedKcal = t.kcal - estKcal;
+  if (t.stated == 0 && est == 0) return '$items · no calories stated';
+  final shown = t.stated == 0 ? '' : '${numText(statedKcal)} kcal stated for ${t.stated} of ${t.items}';
+  return [items, if (shown.isNotEmpty) shown, if (est > 0) '$est estimated (${numText(estKcal)} kcal)'].join(' · ');
 }
 
 class FoodView extends StatelessWidget {

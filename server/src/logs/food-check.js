@@ -76,6 +76,29 @@ async function checkItem(item, item_index, searchFn) {
 // Returns one row per checked item: status "match" | "unverified" | "mismatch" (mismatch rows carry the choice).
 // searchFn(query) -> {results}; it may throw, which makes the item "unverified".
 export async function foodCheck(entry, searchFn) {
-  const picks = (entry.items ?? []).map((item, i) => ({ item, i })).filter(({ item }) => item.kcal !== undefined).slice(0, FOOD_CHECK_MAX);
+  // Estimated items (kcal_estimated) were filled from the same search, so they are not checked again.
+  const picks = (entry.items ?? []).map((item, i) => ({ item, i })).filter(({ item }) => item.kcal !== undefined && !item.kcal_estimated).slice(0, FOOD_CHECK_MAX);
   return Promise.all(picks.map(({ item, i }) => checkItem(item, i, searchFn)));
+}
+
+// Estimates for foods logged without a stated figure (owner, 2026-10-30): the same search and the same per-100 g
+// rule. An estimate is written as kcal with kcal_estimated true and its source, never as a stated figure, so the
+// phone can label it. Items with no usable figure stay without calories.
+export async function estimateFood(entry, searchFn) {
+  const todo = (entry.items ?? []).map((item, i) => ({ item, i })).filter(({ item }) => item.kcal === undefined && item.name).slice(0, FOOD_CHECK_MAX);
+  const results = await Promise.all(todo.map(async ({ item, i }) => {
+    let found = null;
+    try {
+      found = await searchFn(foodQuery(item));
+    } catch {
+      return { item_index: i, status: "unverified" };
+    }
+    const hit = pick(found?.results ?? found ?? [], item);
+    if (!hit) return { item_index: i, status: "unverified" };
+    item.kcal = hit.value;
+    item.kcal_estimated = true;
+    item.kcal_source = { source_url: hit.url, source_title: hit.title };
+    return { item_index: i, status: "estimated", source_url: hit.url, source_title: hit.title };
+  }));
+  return results;
 }

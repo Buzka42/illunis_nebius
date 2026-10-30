@@ -101,12 +101,25 @@ test("no result with a kcal figure is unverified", async () => {
   assert.deepEqual(out.body.check, [{ item_index: 0, status: "unverified" }]);
 });
 
-test("an item without kcal is not searched", async () => {
+test("an item without kcal gets a labelled estimate; stated items are still checked", async () => {
   const output = { items: [{ name: "toast" }, { name: "eggs", quantity: 2, unit: "piece", kcal: 140 }] };
-  const t = tavily({ hits: EGG_HITS });
+  const TOAST_HITS = (q) => (q === "toast calories per serving" ? [{ title: "Toast facts", url: "https://food.example/toast", content: "One slice of toast has 80 calories." }] : EGG_HITS(q));
+  const t = tavily({ hits: TOAST_HITS });
   const out = await run({ kind: "food", text: "toast and two eggs 140 kcal" }, output, { fetchFn: t.fetchFn });
-  assert.deepEqual(t.queries, ["eggs calories per piece"]);
+  assert.deepEqual(t.queries, ["toast calories per serving", "eggs calories per piece"]);
   assert.deepEqual(out.body.check.map((c) => c.item_index), [1]);
+  const toast = out.body.entry.items[0];
+  assert.equal(toast.kcal_estimated, true);
+  assert.equal(typeof toast.kcal, "number");
+  assert.equal(out.body.entry.items[1].kcal_estimated, undefined);
+});
+
+test("an estimate with no usable figure stays without calories", async () => {
+  const output = { items: [{ name: "mystery stew" }] };
+  const t = tavily({ hits: [] });
+  const out = await run({ kind: "food", text: "a bowl of mystery stew" }, output, { fetchFn: t.fetchFn });
+  assert.equal(out.body.entry.items[0].kcal, undefined);
+  assert.equal(out.body.entry.items[0].kcal_estimated, undefined);
 });
 
 test("at most 3 searches are made", async () => {

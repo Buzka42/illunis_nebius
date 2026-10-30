@@ -120,21 +120,25 @@ sealed class LogEntry {
 }
 
 class FoodItem {
-  const FoodItem({required this.name, this.quantity, this.unit, this.kcal});
+  const FoodItem({required this.name, this.quantity, this.unit, this.kcal, this.estimated = false});
   final String name;
   final double? quantity;
 
   /// `g`, `ml`, `piece` or `serving`.
   final String? unit;
 
-  /// Only when the user stated it.
+  /// Only when the user stated it, or when [estimated] is true.
   final double? kcal;
+
+  /// True when [kcal] is an estimate from a web source (server kcal_estimated), not a figure the user stated.
+  final bool estimated;
 
   Map<String, Object?> toJson() => {
         'name': name,
         if (quantity != null) 'quantity': quantity,
         if (unit != null) 'unit': unit,
         if (kcal != null) 'kcal': kcal,
+        if (estimated) 'estimated': true,
       };
 
   static FoodItem _read(Object? j) {
@@ -145,6 +149,7 @@ class FoodItem {
       quantity: m['quantity'] == null ? null : _need(_num(m['quantity'])),
       unit: unit == null ? null : _need(_oneOf(unit, foodUnits)),
       kcal: m['kcal'] == null ? null : _need(_num(m['kcal'])),
+      estimated: m['estimated'] == true || m['kcal_estimated'] == true,
     );
   }
 }

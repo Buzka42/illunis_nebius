@@ -9,7 +9,7 @@ import { notConfigured } from "../council/provider.js";
 import { chatBody, postJson, readCompletion } from "../providers/chat.js";
 import { EFFORT_PREFS, LOG_KINDS, NEEDS_CHOICE, envelope, validateEntry } from "./schemas.js";
 import { searchTavily, tavilyConfigProblem } from "../providers/tavily.js";
-import { foodCheck } from "./food-check.js";
+import { estimateFood, foodCheck } from "./food-check.js";
 
 export const MAX_LOG_TEXT = 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -125,10 +125,12 @@ export async function runLogParse(body, env = {}, deps = {}) {
   if (!result.ok) return { status: 422, body: { ok: false, code: result.code }, code: result.code };
   // date: the phone's local day when sent, else the server's UTC day.
   const date = body.date ?? new Date(now()).toISOString().slice(0, 10);
-  const hasKcal = kind === "food" && result.entry.items.some((it) => it.kcal !== undefined);
-  if (hasKcal && !tavilyConfigProblem(env, "log")) {
-    const search = searchFn ?? ((q) => searchTavily(q, env, { fetchFn, timeoutMs: 8000, maxResults: 3, role: "log" }));
-    return checkedFood(kind, date, result.entry, search);
-  }
+  const tavilyOn = !tavilyConfigProblem(env, "log");
+  const search = searchFn ?? ((q) => searchTavily(q, env, { fetchFn, timeoutMs: 8000, maxResults: 3, role: "log" }));
+  // Foods without a stated figure get a labelled estimate from the same search (estimateFood), then the stated
+  // figures are checked as before.
+  if (kind === "food" && tavilyOn) await estimateFood(result.entry, search);
+  const hasKcal = kind === "food" && result.entry.items.some((it) => it.kcal !== undefined && !it.kcal_estimated);
+  if (hasKcal && tavilyOn) return checkedFood(kind, date, result.entry, search);
   return { status: 200, body: { ok: true, ...envelope(kind, date, result.entry) }, code: null };
 }

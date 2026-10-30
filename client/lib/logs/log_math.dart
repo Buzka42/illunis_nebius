@@ -8,8 +8,8 @@ import 'log_entry.dart';
 
 // ---- food ----------------------------------------------------------------
 
-/// Calories summed only over items where the user stated kcal.
-/// [stated] of [items] items carried a number.
+/// Calories summed over items with a figure: stated by the user, or estimated (estimates are not counted in [stated]).
+/// [stated] of [items] items carried a figure the user stated.
 ({double kcal, int stated, int items}) foodTotals(Iterable<FoodEntry> entries) {
   var kcal = 0.0;
   var stated = 0, items = 0;
@@ -18,7 +18,7 @@ import 'log_entry.dart';
       items++;
       if (i.kcal case final k?) {
         kcal += k;
-        stated++;
+        if (!i.estimated) stated++;
       }
     }
   }
