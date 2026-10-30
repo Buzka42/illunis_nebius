@@ -395,21 +395,21 @@ class _BreathViewState extends State<BreathView> with SingleTickerProviderStateM
                 children: [
                   Padding(
                     padding: const EdgeInsets.only(left: Space.gutter, right: Space.s8),
+                    // The name sits on Close's baseline, the status right under it.
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
                       children: [
                         Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: Space.s4),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(t.name, style: label),
-                                Text(s.paused ? 'Paused. $status' : status, style: label),
-                              ],
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(t.name, style: label),
+                              Text(s.paused ? 'Paused. $status' : status, style: label),
+                            ],
                           ),
                         ),
+                        const SizedBox(width: Space.s8),
                         GlassTextAction('Close', widget.onClose, key: BreathView.closeKey),
                       ],
                     ),
@@ -510,9 +510,11 @@ class _BreathViewState extends State<BreathView> with SingleTickerProviderStateM
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            if (cue != null) Text(cue, style: TypeScale.body(p.ink2)),
+                            // Centred under the centred ring and phase.
+                            if (cue != null) Text(cue, textAlign: TextAlign.center, style: TypeScale.body(p.ink2)),
                             if (cue != null && t.stopPrompts.isNotEmpty) const SizedBox(height: Space.s8),
-                            if (t.stopPrompts.isNotEmpty) Text(t.stopPrompts.join(' '), style: TypeScale.note(p.ink2)),
+                            if (t.stopPrompts.isNotEmpty)
+                              Text(t.stopPrompts.join(' '), textAlign: TextAlign.center, style: TypeScale.note(p.ink2)),
                           ],
                         ),
                       ),

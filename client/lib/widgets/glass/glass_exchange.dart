@@ -30,7 +30,9 @@ abstract final class ExchangeMetrics {
   static const double minOfferWidth = 232;
   static const EdgeInsets inset = EdgeInsets.fromLTRB(Space.inset, Space.gutter, Space.inset, 18);
   static const EdgeInsets tightInset = EdgeInsets.symmetric(horizontal: Space.gutter, vertical: Space.s12);
-  static const double echoGap = Space.s8;
+
+  /// Your line, then the reply: a clear step between the two voices.
+  static const double echoGap = Space.s12;
   static const double paragraphGap = Space.s12;
   static const double notesGap = Space.s12;
   static const double noteGap = Space.s4;
@@ -186,7 +188,9 @@ ExchangeFit measureExchange(ExchangeContent c,
     for (final l in c.trace) _textWidth(l, note, scaler),
   ].fold(0.0, math.max).ceilToDouble() + 1 + inset.horizontal;
   if (c.offerId != null) {
-    natural = math.max(natural, math.max(ExchangeMetrics.minOfferWidth, offerWidth(c.offerLabels, scaler)));
+    // The action row sits in the text column, inside the same inset.
+    natural = math.max(
+        natural, math.max(ExchangeMetrics.minOfferWidth, offerWidth(c.offerLabels, scaler) + inset.horizontal));
   }
   final width = math.min(natural, maxWidth);
   final inner = width - inset.horizontal;
@@ -216,7 +220,7 @@ ExchangeFit measureExchange(ExchangeContent c,
       }
     }
   }
-  if (c.offerId != null) h += offerHeight(scaler, labels: c.offerLabels, width: width);
+  if (c.offerId != null) h += offerHeight(scaler, labels: c.offerLabels, width: inner);
   return ExchangeFit(size: size, echo: showEcho, inset: inset, width: width, height: h);
 }
 
@@ -350,7 +354,10 @@ class GlassExchange extends StatelessWidget {
               ]),
             ),
             if (offer != null)
-              GlassActions(topRule: true, actions: [
+              Padding(
+                // In the text column: its rule and cells share the reply's edges.
+                padding: EdgeInsets.only(left: fit.inset.left, right: fit.inset.right),
+                child: GlassActions(topRule: true, actions: [
                 if (c.offerChoices case final choices?)
                   for (final (i, label) in choices.indexed)
                     GlassAction(label, () => onChoice(label),
@@ -359,7 +366,8 @@ class GlassExchange extends StatelessWidget {
                   GlassAction('Yes', () => onChoice('Yes'), key: ValueKey('offer-$offer-yes'), primary: true),
                   GlassAction('No', () => onChoice('No'), key: ValueKey('offer-$offer-no')),
                 ],
-              ]),
+                ]),
+              ),
           ]),
         ),
       ),
