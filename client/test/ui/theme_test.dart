@@ -1,6 +1,6 @@
 // The theme leaves no Material default showing (UI_PLAN S5): the field's
 // cursor, selection and handles are the token accent and selection, there
-// is no ripple, and tooltip text is Jost.
+// is no ripple, and tooltip text is the sans.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:illunis_client/ui/theme.dart';
@@ -25,7 +25,7 @@ void main() {
     });
   }
 
-  testWidgets('tooltip text is Jost on the glass colour', (t) async {
+  testWidgets('tooltip text is the sans on the glass colour', (t) async {
     await t.pumpWidget(MaterialApp(
       theme: illunisTheme(Palette.night, day: false),
       home: const Center(child: Tooltip(message: 'Send', child: SizedBox.square(dimension: 48))),

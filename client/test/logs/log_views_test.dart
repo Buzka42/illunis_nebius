@@ -58,13 +58,20 @@ void main() {
   setUpAll(loadCaptionFonts);
   const kinds = [ViewKind.food, ViewKind.activity, ViewKind.strength, ViewKind.run, ViewKind.cardio];
 
-  testWidgets('every log view has an empty state that says what to log', (t) async {
+  testWidgets('every log view has an empty state that says what to do, in one line', (t) async {
+    final seen = <String>{};
     for (final k in [...kinds, ViewKind.wellbeing, ViewKind.logs]) {
       await pumpView(t, k, deps());
       expect(find.byKey(LogKeys.empty), findsOneWidget, reason: k.name);
       expect(find.byKey(LogKeys.total), findsNothing, reason: k.name);
-      final text = t.widget<Text>(find.descendant(of: find.byKey(LogKeys.empty), matching: find.byType(Text))).data!;
-      expect(text.length, greaterThan(40), reason: k.name);
+      final empty = find.descendant(of: find.byKey(LogKeys.empty), matching: find.byType(Text));
+      final text = t.widget<Text>(empty).data!;
+      // One sentence that starts with what to do (Type, Ask, Allow).
+      expect(RegExp(r'^(Type|Ask|Allow) [^.]+\.$').hasMatch(text), isTrue, reason: '${k.name}: "$text"');
+      expect(seen.add(text), isTrue, reason: '${k.name}: says the same as another view');
+      // One line at 360 px with the real fonts.
+      final body = TypeScale.body(Palette.night.ink);
+      expect(t.getSize(empty).height, lessThan(body.fontSize! * body.height! * 1.5), reason: '${k.name}: "$text"');
       expect(t.takeException(), isNull, reason: k.name);
     }
   });

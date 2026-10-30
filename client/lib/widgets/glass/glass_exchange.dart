@@ -1,11 +1,11 @@
-/// The latest exchange on one clear glass, centred in the sky above the
-/// input (UI_PLAN UI-2): your own line small in Jost and ink2, the reply in
-/// Cormorant, notes (sources, the not-medical-advice line) under a hairline,
-/// and an offer's Yes / No as the glass's bottom edge. It grows to fit and
-/// never scrolls. When it would not fit, the fit ladder: the reply steps
-/// 22, 20, 18 px (never back up within an exchange), then your line goes,
-/// then the inset tightens, and only then does the whole glass scale down.
-/// Text is never clipped.
+/// The latest exchange, straight on the sky (no plate), centred above the
+/// input (UI_PLAN UI-2): your own line small in the sans and ink2, the reply
+/// in the serif, notes (sources, the not-medical-advice line) under a
+/// hairline, and an offer's Yes / No under a hairline at the bottom. It
+/// grows to fit and never scrolls. When it would not fit, the fit ladder:
+/// the reply steps 22, 20, 18 px (never back up within an exchange), then
+/// your line goes, then the inset tightens, and only then does the whole
+/// block scale down. Text is never clipped.
 library;
 
 import 'dart:math' as math;

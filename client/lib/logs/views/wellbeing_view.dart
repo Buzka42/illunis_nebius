@@ -18,8 +18,8 @@ class WellbeingView extends StatefulWidget {
   final LogViews deps;
   final VoidCallback onClose;
 
-  static const emptyText = 'No sleep, steps or heart rate from your device for the last 7 days. '
-      'Allow Health Connect in setup and wear your watch overnight, and they will show here.';
+  /// One line: what to do to see sleep, steps and heart rate here.
+  static const emptyText = 'Allow Health Connect in setup to see this.';
 
   @override
   State<WellbeingView> createState() => _WellbeingViewState();

@@ -1,9 +1,11 @@
-// The glass kit (UI_PLAN UI-1, owner amendments A1 and A3): one glass depth
-// whose tint follows the sky behind it, one field, one action row, thin
-// line glyphs. Synthetic text only.
+// The glass kit (UI_PLAN UI-1, owner amendments A1 and A3, and no plates
+// since 2026-10-29): text regions with no surface whose halo follows the sky
+// behind them, one field, one action row, thin line glyphs. Synthetic text
+// only.
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:illunis_client/ui/icons.dart';
@@ -27,58 +29,71 @@ Future<void> pumpPanel(WidgetTester t, {SkyLight Function(Widget child)? sky, Re
   await t.pump();
 }
 
-double alphaOf(WidgetTester t) => t.state<GlassPanelState>(find.byType(GlassPanel)).alpha;
+double haloOf(WidgetTester t) => t.state<GlassPanelState>(find.byType(GlassPanel)).halo;
 
 void main() {
-  group('tint alpha (plan model, before the sky has been looked at)', () {
-    testWidgets('no SkyLight: the worst-case alpha', (t) async {
+  // Owner, 2026-10-29: no plates under text. The panel paints nothing and
+  // only decides how strong a soft halo its text needs (was: the tint alpha
+  // of a glass plate).
+  group('halo strength (model, before the sky has been looked at)', () {
+    testWidgets('no SkyLight: full halo', (t) async {
       await pumpPanel(t);
-      expect(alphaOf(t), GlassSpec.unknown);
+      expect(haloOf(t), Halo.unknown);
     });
 
-    testWidgets('night 0.40 and day 0.45 with no disc behind', (t) async {
+    testWidgets('none by night, the day model by day, with no disc behind', (t) async {
       await pumpPanel(t, sky: (c) => SkyLight(daylight: 0, palette: Palette.night, child: c));
-      expect(alphaOf(t), 0.40);
+      expect(haloOf(t), 0);
       await pumpPanel(t, sky: (c) => SkyLight(daylight: 1, palette: Palette.day, child: c));
-      expect(alphaOf(t), 0.45);
+      expect(haloOf(t), dayModel);
     });
 
-    testWidgets('0.80 with the moon behind the panel, 0.65 in twilight', (t) async {
+    testWidgets('full with the moon behind the panel, and at dusk', (t) async {
       await pumpPanel(t,
           sky: (c) => SkyLight(
               daylight: 0, palette: Palette.night, discs: const [Rect.fromLTWH(170, 470, 24, 24)], child: c));
-      expect(alphaOf(t), 0.80);
+      expect(haloOf(t), 1);
       await pumpPanel(t, sky: (c) => SkyLight(daylight: 0.5, palette: Palette.night, child: c));
-      expect(alphaOf(t), 0.65);
+      expect(haloOf(t), 1);
     });
   });
 
-  testWidgets('with a look at the sky: clear over the dark night, thicker over the moon', (t) async {
+  testWidgets('with a look at the sky: no halo over the dark night, a halo over the moon', (t) async {
     final dark = _probe((x, y) => const Color(0xFF0B1630));
     await pumpPanel(t, sky: (c) => SkyLight(daylight: 0, palette: Palette.night, probe: dark, child: c));
-    expect(alphaOf(t), GlassSpec.alphaFloor);
+    expect(haloOf(t), 0);
     final moonlit = _probe((x, y) => y > 60 && y < 80 ? const Color(0xFFE0E0D8) : const Color(0xFF0B1630));
     await pumpPanel(t, sky: (c) => SkyLight(daylight: 0, palette: Palette.night, probe: moonlit, child: c));
-    expect(alphaOf(t), greaterThan(0.5));
+    expect(haloOf(t), greaterThan(0.5));
   });
 
-  testWidgets('one depth: no BackdropFilter under another, and glass in glass asserts', (t) async {
-    await pumpPanel(t);
-    for (final f in t.widgetList(find.byType(BackdropFilter))) {
-      expect(find.descendant(of: find.byWidget(f), matching: find.byType(BackdropFilter)), findsNothing);
+  testWidgets('the halo reaches the text inside, and none where the sky does not need it', (t) async {
+    Future<List<Shadow>?> shadowsOver(SkyLight Function(Widget child)? sky) async {
+      t.view.physicalSize = const Size(360, 800);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      const text = GlassPanel(child: Text('Synthetic line'));
+      await t.pumpWidget(MaterialApp(home: Center(child: sky == null ? text : sky(text))));
+      await t.pump();
+      return t.renderObject<RenderParagraph>(find.text('Synthetic line')).text.style!.shadows;
     }
+
+    expect(await shadowsOver(null), Halo.shadows(Palette.night.halo, 1));
+    final dark = _probe((x, y) => const Color(0xFF0B1630));
+    expect(await shadowsOver((c) => SkyLight(daylight: 0, palette: Palette.night, probe: dark, child: c)), isEmpty);
+  });
+
+  testWidgets('one text region: a panel in a panel asserts', (t) async {
     await t.pumpWidget(const MaterialApp(home: GlassPanel(child: GlassPanel(child: SizedBox()))));
     expect(t.takeException(), isAssertionError);
   });
 
-  testWidgets('the glass has no pill radius and no sheen', (t) async {
+  testWidgets('no plate: no blur, no clip, no tint, no rim, no gradient under the text', (t) async {
     await pumpPanel(t);
-    final clip = t.widget<ClipRSuperellipse>(find.byType(ClipRSuperellipse));
-    final r = (clip.borderRadius as BorderRadius).topLeft.x;
-    expect(r, Radii.glass);
-    expect(r, lessThan(Radii.maxFor(120)));
-    expect(find.byWidgetPredicate((w) => w is DecoratedBox && w.decoration is BoxDecoration &&
-        (w.decoration as BoxDecoration).gradient != null), findsNothing);
+    final panel = find.byType(GlassPanel);
+    for (final type in [BackdropFilter, ClipRSuperellipse, ClipRRect, CustomPaint, DecoratedBox, ColoredBox]) {
+      expect(find.descendant(of: panel, matching: find.byType(type)), findsNothing, reason: '$type');
+    }
   });
 
   group('GlassActions', () {
@@ -173,7 +188,7 @@ void main() {
     });
   });
 
-  testWidgets('a view sheet: one glass with top corners, the title, Close as a 48 px word at the top right',
+  testWidgets('a view sheet: one text region, the title, Close as a 48 px word at the top right',
       (t) async {
     t.view.physicalSize = const Size(360, 800);
     t.view.devicePixelRatio = 1;

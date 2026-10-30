@@ -92,12 +92,12 @@ void main() {
     });
   });
 
-  test('caption style uses the bundled families with a wght variation', () {
+  test('caption style uses the bundled families with a wght variation (and opsz in the serif)', () {
     final serif = captionTextStyle();
-    expect(serif.fontFamily, 'CormorantGaramond');
-    expect(serif.fontVariations, [const FontVariation('wght', 400)]);
+    expect(serif.fontFamily, 'Newsreader');
+    expect(serif.fontVariations, [const FontVariation('wght', 400), const FontVariation('opsz', 26)]);
     final sans = captionTextStyle(font: CaptionFont.sans);
-    expect(sans.fontFamily, 'Jost');
+    expect(sans.fontFamily, 'SourceSans3');
     expect(sans.fontWeight, FontWeight.w300);
   });
 }

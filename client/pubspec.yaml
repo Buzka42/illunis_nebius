@@ -82,15 +82,17 @@ flutter:
     - assets/clouds/cumulus_06.png
     # Breathwork library, copied from content/ by tool/sync_breath_content.sh.
     - assets/breath/
-  # Caption fonts (SIL OFL 1.1, from google/fonts; OFL.txt beside each file).
-  # Variable wght fonts: pick the weight with FontVariation('wght', ...).
+  # Type (SIL OFL 1.1, unmodified from google/fonts; OFL.txt beside each
+  # file; docs/UI_PLAN.md "Typography decision 2026-10-29"). Variable fonts:
+  # TypeScale sets the axes with FontVariation ('wght', and 'opsz' in the
+  # serif).
   fonts:
-    - family: CormorantGaramond
+    - family: Newsreader
       fonts:
-        - asset: assets/fonts/cormorant_garamond/CormorantGaramond-VariableWght.ttf
-    - family: Jost
+        - asset: assets/fonts/newsreader/Newsreader-VariableOpszWght.ttf
+    - family: SourceSans3
       fonts:
-        - asset: assets/fonts/jost/Jost-VariableWght.ttf
+        - asset: assets/fonts/source_sans_3/SourceSans3-VariableWght.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

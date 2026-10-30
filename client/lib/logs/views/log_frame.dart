@@ -46,12 +46,17 @@ class LogViews {
   final void Function(String line)? log;
 }
 
-/// Row text: Jost body in ink.
-TextStyle logBody(Palette p) => TypeScale.body(p.ink);
+/// Row text: Jost body in ink, with tabular figures so numbers in rows
+/// stacked under each other line up digit by digit.
+TextStyle logBody(Palette p) => TypeScale.body(p.ink, tabular: true);
 
 /// A row's name or a heading: body type, a touch heavier.
 TextStyle logStrong(Palette p) =>
-    TypeScale.body(p.ink).copyWith(fontVariations: const [FontVariation('wght', 520)], fontWeight: FontWeight.w500);
+    logBody(p).copyWith(fontVariations: const [FontVariation('wght', 520)], fontWeight: FontWeight.w500);
+
+/// Space above every heading (a meal, an exercise, a run, a log kind), so
+/// sections start the same way in every view.
+const logHeadingPadding = EdgeInsets.only(top: Space.s12, bottom: Space.s4);
 
 /// One device pixel, the width of every rule.
 double hairline(BuildContext context) => 1 / (MediaQuery.maybeDevicePixelRatioOf(context) ?? 1);
@@ -107,6 +112,15 @@ class LogScaffold extends StatelessWidget {
   /// The most of the height above the keyboard the footer may take.
   static const footerShare = 0.6;
 
+  /// The most the header's text grows with the system text size: the same
+  /// clamp as the breathwork view, so Close is the same word in the same
+  /// place in every view.
+  static const double titleMaxScale = 1.6;
+
+  /// The widest the rows grow on a large screen; the header stays at the
+  /// sheet's full width so Close keeps the top right corner.
+  static const double maxBodyWidth = 640;
+
   @override
   Widget build(BuildContext context) {
     final p = SkyLight.paletteOf(context);
@@ -115,52 +129,62 @@ class LogScaffold extends StatelessWidget {
     // (the sheet leaves 8 px there so Close's word sits on the gutter).
     Widget gutter(Widget child) => Padding(padding: const EdgeInsets.only(right: Space.s8), child: child);
     return GlassSheet(
-      child: Padding(
-        // The keyboard pushes the capture field up instead of covering it.
-        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
-            child: LayoutBuilder(
-              builder: (context, box) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                SheetHeader(title: title, onClose: onClose, closeKey: LogKeys.close),
-                Row(children: [
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: days ? 0 : Space.s8),
-                      child: Text(day, style: TypeScale.label(p.ink2)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        MediaQuery.withClampedTextScaling(
+          maxScaleFactor: titleMaxScale,
+          child: SheetHeader(title: title, onClose: onClose, closeKey: LogKeys.close),
+        ),
+        Expanded(
+          child: Padding(
+            // The keyboard pushes the capture field up instead of covering it.
+            padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: maxBodyWidth),
+                child: LayoutBuilder(
+                  builder: (context, box) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    // One height whether or not the day has chevrons, so the
+                    // rows start at the same place in every view.
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: Space.target),
+                      child: Row(children: [
+                        Expanded(child: Text(day, style: TypeScale.label(p.ink2))),
+                        if (onPrevDay != null)
+                          GlassGlyphAction(IllunisGlyph.back, onPrevDay!, key: LogKeys.prevDay, label: 'Previous day'),
+                        if (onNextDay != null)
+                          GlassGlyphAction(IllunisGlyph.forward, onNextDay!, key: LogKeys.nextDay, label: 'Next day')
+                        else if (days)
+                          // Today: the back chevron keeps its place.
+                          const SizedBox(width: Space.target),
+                      ]),
                     ),
-                  ),
-                  if (onPrevDay != null)
-                    GlassGlyphAction(IllunisGlyph.back, onPrevDay!, key: LogKeys.prevDay, label: 'Previous day'),
-                  if (onNextDay != null)
-                    GlassGlyphAction(IllunisGlyph.forward, onNextDay!, key: LogKeys.nextDay, label: 'Next day')
-                  else if (days)
-                    // Today: the back chevron keeps its place.
-                    const SizedBox(width: Space.target),
-                ]),
-                gutter(Container(height: hairline(context), color: p.rule)),
-                const SizedBox(height: Space.s8),
-                Expanded(child: gutter(body)),
-                // The capture takes at most this share of the height above
-                // the keyboard; its preview scrolls inside it.
-                if (footer != null)
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: box.maxHeight * footerShare),
-                    child: gutter(footer!),
-                  ),
-              ]),
+                    gutter(Container(height: hairline(context), color: p.rule)),
+                    const SizedBox(height: Space.s8),
+                    Expanded(child: gutter(body)),
+                    // The capture takes at most this share of the height above
+                    // the keyboard; its preview scrolls inside it.
+                    if (footer != null)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxHeight: box.maxHeight * footerShare),
+                        child: gutter(footer!),
+                      ),
+                  ]),
+                ),
+              ),
             ),
           ),
         ),
-      ),
+      ]),
     );
   }
 }
 
-/// A heading or a row's name in the day's list.
+/// A heading in the day's list (a meal). A heading with a figure beside it
+/// (an exercise and its volume, a run, a log kind) is a strong [LogRow];
+/// both take the same type and [logHeadingPadding].
 class LogHeading extends StatelessWidget {
-  const LogHeading(this.text, {super.key, this.padding = EdgeInsets.zero});
+  const LogHeading(this.text, {super.key, this.padding = logHeadingPadding});
   final String text;
   final EdgeInsets padding;
 
@@ -215,7 +239,8 @@ class LogTotal extends StatelessWidget {
   }
 }
 
-/// What to log when nothing is there; never a blank view.
+/// What to do when nothing is there, in one short line; never a blank
+/// view.
 class LogEmpty extends StatelessWidget {
   const LogEmpty(this.text, {super.key});
   final String text;
@@ -242,9 +267,11 @@ double widestWord(String text, TextStyle style, TextScaler scaler) {
   return widest.ceilToDouble();
 }
 
-/// A label and value on one line that wraps instead of overflowing. When a
-/// word would have to break (large text sizes), the value goes under the
-/// label instead.
+/// A label and value on one line that wraps instead of overflowing. The
+/// value ends at the right edge in tabular figures, so the numbers of rows
+/// under each other line up. When a word would have to break (large text
+/// sizes), the value goes under the label instead. A [strong] row is a
+/// heading with its figure and takes [logHeadingPadding].
 class LogRow extends StatelessWidget {
   const LogRow(this.label, this.value, {super.key, this.strong = false});
   final String label;
@@ -260,7 +287,7 @@ class LogRow extends StatelessWidget {
         final share = (box.maxWidth - Space.s8) / 7;
         final side = widestWord(label, labelStyle, scaler) <= share * 3 && widestWord(value, valueStyle, scaler) <= share * 4;
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: Space.s4),
+          padding: strong ? logHeadingPadding : const EdgeInsets.symmetric(vertical: Space.s4),
           child: side
               ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Expanded(flex: 3, child: Text(label, style: labelStyle)),

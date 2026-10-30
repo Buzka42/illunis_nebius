@@ -6,7 +6,6 @@ library;
 
 import 'package:flutter/material.dart';
 
-import '../../ui/tokens.dart';
 import '../log_entry.dart';
 import '../log_math.dart';
 import 'log_frame.dart';
@@ -48,14 +47,10 @@ Widget splitTable(RunEntry r) {
 }
 
 List<Widget> runRows(List<LogEntry> entries) => [
-      for (final (i, r) in entries.whereType<RunEntry>().indexed)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: Space.s4),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            LogRow('Run ${i + 1}', _runLine(r), strong: true),
-            if (r.splits.isNotEmpty) splitTable(r),
-          ]),
-        ),
+      for (final (i, r) in entries.whereType<RunEntry>().indexed) ...[
+        LogRow('Run ${i + 1}', _runLine(r), strong: true),
+        if (r.splits.isNotEmpty) splitTable(r),
+      ],
     ];
 
 String runTotal(List<LogEntry> entries) {
@@ -74,9 +69,8 @@ class RunView extends StatelessWidget {
   final LogViews deps;
   final VoidCallback onClose;
 
-  /// The field's hint shows the example, so it is not said twice here.
-  static String get emptyText => 'Nothing logged for this day. Type the distance and time below, with split times '
-      'if you have them.';
+  /// One line; the field's hint shows the example, so it is not said twice.
+  static const emptyText = 'Type your distance and time below.';
 
   @override
   Widget build(BuildContext context) => LogDayView(

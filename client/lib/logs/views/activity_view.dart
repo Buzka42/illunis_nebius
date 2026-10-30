@@ -35,8 +35,8 @@ class ActivityView extends StatelessWidget {
   final LogViews deps;
   final VoidCallback onClose;
 
-  /// The field's hint shows the example, so it is not said twice here.
-  static String get emptyText => 'Nothing logged for this day. Type an activity below with its time or distance.';
+  /// One line; the field's hint shows the example, so it is not said twice.
+  static const emptyText = 'Type an activity and its time below.';
 
   @override
   Widget build(BuildContext context) => LogDayView(

@@ -20,19 +20,11 @@ String setText(StrengthSet s) {
 }
 
 List<Widget> strengthRows(List<LogEntry> entries) => [
-      for (final x in entries.whereType<StrengthEntry>().expand((e) => e.exercises))
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: Space.s4),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: LogHeading(_cap(x.name))),
-              if (exerciseVolume(x).isNotEmpty)
-                Flexible(child: LogLine(volumeText(exerciseVolume(x)), align: TextAlign.end)),
-            ]),
-            for (final (i, s) in x.sets.indexed)
-              LogLine('Set ${i + 1}: ${setText(s)}', padding: const EdgeInsets.only(left: Space.s12)),
-          ]),
-        ),
+      for (final x in entries.whereType<StrengthEntry>().expand((e) => e.exercises)) ...[
+        LogRow(_cap(x.name), volumeText(exerciseVolume(x)), strong: true),
+        for (final (i, s) in x.sets.indexed)
+          LogLine('Set ${i + 1}: ${setText(s)}', padding: const EdgeInsets.only(left: Space.s12)),
+      ],
     ];
 
 String strengthTotal(List<LogEntry> entries) {
@@ -51,9 +43,8 @@ class StrengthView extends StatelessWidget {
   final LogViews deps;
   final VoidCallback onClose;
 
-  /// The field's hint shows the example, so it is not said twice here.
-  static String get emptyText => 'Nothing logged for this day. Type each exercise with reps and weight below. Add '
-      'RIR or RPE only if you track it.';
+  /// One line; the field's hint shows the example, so it is not said twice.
+  static const emptyText = 'Type an exercise with reps and weight.';
 
   @override
   Widget build(BuildContext context) => LogDayView(

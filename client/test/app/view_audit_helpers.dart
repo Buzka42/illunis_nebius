@@ -9,11 +9,12 @@ import 'package:flutter_test/flutter_test.dart';
 
 const phone = Size(360, 780);
 
-/// Loads Jost and Cormorant Garamond from assets/fonts once per test file.
+/// Loads the two bundled families (Fonts.sans, Fonts.serif) from
+/// assets/fonts once per test file.
 Future<void> loadCaptionFonts() async {
   for (final (family, path) in [
-    ('Jost', 'assets/fonts/jost/Jost-VariableWght.ttf'),
-    ('CormorantGaramond', 'assets/fonts/cormorant_garamond/CormorantGaramond-VariableWght.ttf'),
+    ('SourceSans3', 'assets/fonts/source_sans_3/SourceSans3-VariableWght.ttf'),
+    ('Newsreader', 'assets/fonts/newsreader/Newsreader-VariableOpszWght.ttf'),
   ]) {
     final bytes = File(path).readAsBytesSync();
     await (FontLoader(family)..addFont(Future.value(ByteData.sublistView(bytes)))).load();

@@ -2,6 +2,7 @@
 // turn fills the thread, and a view opens only after a yes (typed or
 // tapped). Synthetic text only; this checks the widget tree, not the look.
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:illunis_client/breath/breath_view.dart';
 import 'package:illunis_client/app/app_controller.dart';
@@ -126,7 +127,7 @@ void main() {
     expect(send.right, lessThanOrEqualTo(360 - ChatComposer.gutter));
   });
 
-  testWidgets('two voices: the reply in Cormorant ink, your line and the hint in Jost ink2', (t) async {
+  testWidgets('two voices: the reply in the serif and ink, your line and the hint in the sans and ink2', (t) async {
     t.view.physicalSize = const Size(360, 800);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
@@ -143,14 +144,12 @@ void main() {
     expect((echo.fontFamily, echo.color), (Fonts.sans, p.ink2));
     final hint = t.widget<Text>(find.text(ChatComposer.hint)).style!;
     expect((hint.fontFamily, hint.color), (Fonts.sans, p.ink2));
-    // No SkyLight here: the worst-case glass, and every text still reads
-    // over white or black behind it.
-    expect(t.state<GlassPanelState>(find.byType(GlassPanel).first).alpha, GlassSpec.unknown);
-    for (final under in [const Color(0xFFFFFFFF), const Color(0xFF000000)]) {
-      for (final ink in p.texts) {
-        expect(contrast(ink, composite(p.glass, GlassSpec.unknown, under)), greaterThanOrEqualTo(4.5));
-      }
-    }
+    // No SkyLight here: no plate (since 2026-10-29), and with no look at
+    // the sky the text carries the full halo (test/ui/halo_test.dart checks
+    // what it does over the sky sampled on the phone).
+    expect(t.state<GlassPanelState>(find.byType(GlassPanel).first).halo, Halo.unknown);
+    final shown = t.renderObject<RenderParagraph>(find.text('Synthetic reply.')).text.style!;
+    expect(shown.shadows, Halo.shadows(p.halo, Halo.unknown));
   });
 
   testWidgets('by day the composer takes the day inks from SkyLight', (t) async {
@@ -247,8 +246,10 @@ void main() {
       expectUnscaled(t);
     });
 
-    testWidgets('a 60-word reply with sources and a 320 px keyboard fits at 18 px, your line dropped', (t) async {
-      final reply = words(60);
+    // 66 words: past what fits with your line at 18 px in Newsreader (60 did
+    // in Cormorant), short of the scale-down guard (76).
+    testWidgets('a 66-word reply with sources and a 320 px keyboard fits at 18 px, your line dropped', (t) async {
+      final reply = words(66);
       await pumpComposer(t, reply, keyboard: 320, size: const Size(360, 780));
       expectFits(t, [reply, sources], keyboard: 320, height: 780);
       expect(fontOf(t, reply), 18);

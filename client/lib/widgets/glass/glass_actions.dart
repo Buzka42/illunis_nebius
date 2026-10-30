@@ -1,9 +1,8 @@
 /// A row of equal text actions (Yes / No, Save, Keep mine / Use, Pause /
-/// Stop): cells at least 48 px tall in Jost label type, split by faint
-/// hairlines, with no shape of their own. They sit on the glass they are
-/// in (or on the sky) and never carry glass themselves. The primary cell
-/// is in the accent, the others in ink. A press shows an 8 % ink veil, no
-/// ripple.
+/// Stop): cells at least 48 px tall in label type, split by faint
+/// hairlines, with no shape of their own. They sit on the sky, with the
+/// halo of the [GlassPanel] they are in. The primary cell is in the accent,
+/// the others in ink. A press shows an 8 % ink veil, no ripple.
 library;
 
 import 'package:flutter/material.dart';
@@ -11,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../../ui/icons.dart';
 import '../../ui/sky_light.dart';
 import '../../ui/tokens.dart';
+import 'glass_surface.dart';
 
 class GlassAction {
   const GlassAction(this.label, this.onPressed, {this.key, this.primary = false});
@@ -102,7 +102,9 @@ class _Cell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = action.primary ? palette.accent : palette.ink;
-    final text = Text(action.label, textAlign: TextAlign.center, style: TypeScale.label(color));
+    // Material below resets DefaultTextStyle, so the halo is passed here.
+    final style = TypeScale.label(color).copyWith(shadows: TextHalo.of(context));
+    final text = Text(action.label, textAlign: TextAlign.center, style: style);
     return Semantics(
       button: true,
       child: Material(

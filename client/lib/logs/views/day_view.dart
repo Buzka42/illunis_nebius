@@ -37,8 +37,8 @@ class LogsDayView extends StatefulWidget {
   final LogViews deps;
   final VoidCallback onClose;
 
-  static const emptyText = 'Nothing logged today. Ask to log a meal, a run, a strength session, cardio or '
-      'another activity, for example "log my run".';
+  /// One line: what to do when nothing is logged today.
+  static const emptyText = 'Ask in the chat to log a meal or a run.';
 
   @override
   State<LogsDayView> createState() => _LogsDayViewState();

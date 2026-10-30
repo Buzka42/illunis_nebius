@@ -1,11 +1,12 @@
-/// Clear glass over the sky (owner amendments A1 and A2; UI_PLAN 3.2): a
-/// backdrop blur, a tint only as thick as the text on it needs over the real
-/// sky behind it ([SkyLight]), and a 1 px light edge brightest on top where
-/// the light falls. One depth: no shadow, no sheen, never glass on glass.
+/// Text straight on the sky (owner, 2026-10-29: no plates under text).
+/// [GlassPanel] keeps its name and constructor for its callers but paints
+/// nothing: no tint, no blur, no rim, no shape. It looks at the sky behind
+/// its region ([SkyLight]) and gives the text inside the softest [Halo]
+/// that keeps every text pair at 4.5:1; over a clear night or a pale day
+/// sky that is no halo at all.
 library;
 
-import 'dart:ui' as ui;
-
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 import '../../ui/sky_light.dart';
@@ -21,95 +22,89 @@ class GlassPanel extends StatefulWidget {
 
   final Widget child;
   final EdgeInsets padding;
+
+  /// Kept for callers; with no plate there is no shape to round.
   final BorderRadius borderRadius;
 
   @override
   State<GlassPanel> createState() => GlassPanelState();
 }
 
-/// Public for tests: [alpha] is the tint alpha the glass is settling on.
+/// Public for tests: [halo] is the halo strength the text is settling on.
 class GlassPanelState extends State<GlassPanel> {
-  double _alpha = GlassSpec.unknown;
+  double _halo = Halo.unknown;
   bool _measured = false;
   SkyLight? _sky;
 
-  double get alpha => _alpha;
+  double get halo => _halo;
 
-  /// After layout: where the glass is on screen decides how thick it is.
+  /// After layout: the sky behind the region decides the halo.
   void _measure() {
     if (!mounted) return;
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize || !box.attached) return;
-    final rect = box.localToGlobal(Offset.zero) & box.size;
-    final a = _sky?.glassAlpha(rect) ?? GlassSpec.unknown;
-    if (_measured && (a - _alpha).abs() < 0.005) return;
+    final h = haloFor(_sky, box.localToGlobal(Offset.zero) & box.size);
+    if (_measured && (h - _halo).abs() < 0.005) return;
     setState(() {
-      _alpha = a;
+      _halo = h;
+      // The first look sets the halo at once (the text is fading in); later
+      // changes ease.
+      _jump = !_measured;
       _measured = true;
     });
   }
 
+  bool _jump = true;
+
   @override
   Widget build(BuildContext context) {
     assert(context.findAncestorStateOfType<GlassPanelState>() == null,
-        'A GlassPanel inside a GlassPanel: glass has one depth (UI_PLAN 3.2).');
+        'A GlassPanel inside a GlassPanel: one text region, one halo.');
     _sky = SkyLight.maybeOf(context);
     final p = _sky?.palette ?? Palette.night;
     WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
     final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    final radius = widget.borderRadius;
     return TweenAnimationBuilder<double>(
-      tween: Tween(end: _alpha),
-      // The first look sets the tint at once (the glass is fading in).
-      duration: reduce || !_measured ? Duration.zero : Motion.glass,
+      tween: Tween(end: _halo),
+      duration: reduce || _jump ? Duration.zero : Motion.glass,
       curve: Motion.glassCurve,
-      builder: (context, a, child) => ClipRSuperellipse(
-        borderRadius: radius,
-        child: BackdropFilter.grouped(
-          filter: ui.ImageFilter.blur(sigmaX: GlassSpec.sigma, sigmaY: GlassSpec.sigma),
-          child: CustomPaint(
-            painter: _Tint(p.glass.withValues(alpha: a), radius),
-            foregroundPainter: _Rim(p.rimTop, p.rimSide, radius),
-            child: child,
-          ),
-        ),
-      ),
+      builder: (context, h, child) => TextHalo(shadows: Halo.shadows(p.halo, h), child: child!),
       child: Padding(padding: widget.padding, child: widget.child),
     );
   }
 }
 
-class _Tint extends CustomPainter {
-  const _Tint(this.color, this.radius);
-  final Color color;
-  final BorderRadius radius;
-
-  @override
-  void paint(Canvas canvas, Size size) =>
-      canvas.drawRSuperellipse(radius.toRSuperellipse(Offset.zero & size), Paint()..color = color);
-
-  @override
-  bool shouldRepaint(_Tint old) => old.color != color || old.radius != radius;
+/// Halo strength for text covering [rect] (global). With a look at the sky,
+/// the weakest halo at which [SkyLight.palette]'s texts reach the target
+/// over the darkest and brightest sky under [rect]. Before the first look,
+/// a model: full over a bright disc or at dusk, none by night, [dayModel]
+/// by day. Full with no SkyLight at all.
+double haloFor(SkyLight? sky, Rect rect) {
+  if (sky == null) return Halo.unknown;
+  final range = sky.probe?.range(rect);
+  if (range != null) return solveHalo(sky.palette, [range.$1, range.$2]);
+  if (sky.discs.any((d) => d.inflate(2 * GlassSpec.sigma).overlaps(rect))) return 1;
+  if (sky.daylight > 0.15 && sky.daylight < 0.85) return 1;
+  return sky.daylight >= 0.5 ? dayModel : 0;
 }
 
-/// A hairline edge: [top] where the light falls, easing to [side] by a
-/// third of the way down. Light, not a gradient you notice.
-class _Rim extends CustomPainter {
-  const _Rim(this.top, this.side, this.radius);
-  final Color top, side;
-  final BorderRadius radius;
+/// The halo by day before the sky has been looked at: full, because the
+/// day sky the phone draws is a mid-tone (median L 0.15) on which the day
+/// inks need all of it (docs/UI_PLAN.md, "Typography decision 2026-10-29").
+const double dayModel = 1;
+
+/// The halo for the text below: [DefaultTextStyle] carries it to every
+/// [Text] whose style leaves shadows unset, and fields read it with [of].
+class TextHalo extends InheritedWidget {
+  TextHalo({super.key, required this.shadows, required Widget child})
+      : super(child: DefaultTextStyle.merge(style: TextStyle(shadows: shadows), child: child));
+
+  final List<Shadow> shadows;
+
+  /// The halo above [context]; none outside a [GlassPanel].
+  static List<Shadow> of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<TextHalo>()?.shadows ?? const [];
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final rect = (Offset.zero & size).deflate(0.5);
-    final reach = (Radii.glass * 2 / size.height).clamp(0.0, 1.0);
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..shader = ui.Gradient.linear(rect.topCenter, rect.bottomCenter, [top, side, side], [0, reach, 1]);
-    canvas.drawRSuperellipse(radius.toRSuperellipse(rect), paint);
-  }
-
-  @override
-  bool shouldRepaint(_Rim old) => old.top != top || old.side != side || old.radius != radius;
+  bool updateShouldNotify(TextHalo old) => !listEquals(shadows, old.shadows);
 }

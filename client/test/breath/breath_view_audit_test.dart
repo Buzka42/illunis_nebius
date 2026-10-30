@@ -50,12 +50,17 @@ class _Host extends StatelessWidget {
 
 /// Opens [text] through a real offer and a yes, as the app does.
 Future<ViewHost> open(WidgetTester t, String text, BreathDeps deps,
-    {double textScale = 1, bool reduceMotion = false, Size size = phone}) async {
+    {double textScale = 1, bool reduceMotion = false, Size size = phone, double keyboard = 0}) async {
   phoneSurface(t, size: size);
   final views = ViewHost();
   final offer = ViewOffer(host: views, post: (_, _) {}, timer: (d, f) => _NoTimer(), log: (_) {});
   await t.pumpWidget(MediaQuery(
-    data: MediaQueryData(size: size, textScaler: TextScaler.linear(textScale), disableAnimations: reduceMotion),
+    data: MediaQueryData(
+      size: size,
+      textScaler: TextScaler.linear(textScale),
+      disableAnimations: reduceMotion,
+      viewInsets: EdgeInsets.only(bottom: keyboard),
+    ),
     child: _Host(views, deps),
   ));
   expect(offer.claim(text), isTrue, reason: text);
@@ -106,7 +111,10 @@ void main() {
         expect(find.text(howText), findsOneWidget);
         expectFits(t, reason: 'how');
         await tapKey(t, BreathView.yesKey);
-        expect(find.text(screenQuestions[ScreenKind.standard]!), findsOneWidget);
+        expect(find.text(screenQuestion), findsOneWidget);
+        for (final item in screenItems[ScreenKind.standard]!) {
+          expect(find.text(item), findsOneWidget, reason: item);
+        }
         expectFits(t, reason: 'screen');
         await tapKey(t, BreathView.noKey);
         expect(find.text(advancedQuestion), findsOneWidget);
@@ -344,6 +352,175 @@ void main() {
       expect(alphaAt(100, 100), 0);
       // Somewhere along the middle row the ring is lit.
       expect([for (var x = 0; x < 200; x++) alphaAt(x, 100)].any((a) => a > 0), isTrue);
+    });
+  });
+
+  group('the ring on the centre of the open sky', () {
+    /// Starts box breathing (profile stored) and runs into the session.
+    Future<void> session(WidgetTester t, {Size size = phone, double scale = 1, double keyboard = 0}) async {
+      await profile();
+      await open(t, 'do box breathing', deps(), size: size, textScale: scale, keyboard: keyboard);
+      await tapKey(t, BreathView.yesKey);
+      await t.pump(const Duration(seconds: 50));
+    }
+
+    void expectCentred(WidgetTester t, {required Size size, double keyboard = 0, String? reason}) {
+      final sky = t.getRect(find.byKey(BreathView.skyKey));
+      final ring = t.getRect(find.byKey(BreathView.visualKey));
+      final close = t.getRect(find.byKey(BreathView.closeKey));
+      final stop = t.getRect(find.byKey(BreathView.stopKey));
+      expect(ring.width, ring.height, reason: '$reason square');
+      expect(ring.width, greaterThanOrEqualTo(BreathView.ringMin), reason: '$reason size');
+      expect((ring.center.dx - size.width / 2).abs(), lessThan(0.5), reason: '$reason horizontal');
+      expect((ring.center.dy - sky.center.dy).abs(), lessThan(0.5), reason: '$reason vertical');
+      expect(sky.top, greaterThanOrEqualTo(close.bottom), reason: '$reason under Close');
+      expect(ring.overlaps(close), isFalse, reason: '$reason never on Close');
+      expect(ring.top, greaterThanOrEqualTo(sky.top), reason: reason);
+      expect(ring.bottom, lessThanOrEqualTo(sky.bottom), reason: reason);
+      expect(stop.bottom, lessThanOrEqualTo(size.height - keyboard), reason: '$reason Stop above the keyboard');
+      // The phase sits above the ring, the cue below it, neither on it.
+      const phases = {'Breathe in', 'A little more in', 'Pause, if comfortable', 'Breathe out'};
+      final phase = t.getRect(find.byWidgetPredicate((w) => w is Text && phases.contains(w.data)));
+      expect(phase.bottom, lessThanOrEqualTo(ring.top), reason: '$reason phase above');
+      final cue = find.byType(GlassPanel);
+      if (cue.evaluate().isNotEmpty) {
+        expect(t.getRect(cue).top, greaterThanOrEqualTo(ring.bottom), reason: '$reason cue below');
+      }
+    }
+
+    testWidgets('at 360 x 780 the ring is centred, 320 px at most, under Close', (t) async {
+      await session(t);
+      expectCentred(t, size: phone);
+      expect(t.getSize(find.byKey(BreathView.visualKey)).width, lessThanOrEqualTo(BreathView.ringMax));
+      expectFits(t);
+      await tapKey(t, BreathView.stopKey);
+    });
+
+    testWidgets('with the keyboard open the ring shrinks, stays centred, and Stop stays above it', (t) async {
+      await session(t, keyboard: 300);
+      expectCentred(t, size: phone, keyboard: 300);
+      expectFits(t);
+      await tapKey(t, BreathView.stopKey);
+    });
+
+    for (final (size, scale) in [(const Size(360, 560), 1.5), (phone, 2.0), (const Size(800, 1280), 1.0)]) {
+      testWidgets('at ${size.width.toInt()} x ${size.height.toInt()} and ${scale}x text the ring is centred', (t) async {
+        await session(t, size: size, scale: scale);
+        expectCentred(t, size: size, reason: '$size $scale');
+        expectFits(t, width: size.width);
+        await tapKey(t, BreathView.stopKey);
+      });
+    }
+
+    testWidgets('the ring keeps its size and place through the phases and the cues', (t) async {
+      await session(t);
+      final first = t.getRect(find.byKey(BreathView.visualKey));
+      for (var i = 0; i < 12; i++) {
+        await t.pump(const Duration(seconds: 2));
+        expect(t.getRect(find.byKey(BreathView.visualKey)), first, reason: 'step $i');
+      }
+      await tapKey(t, BreathView.stopKey);
+    });
+
+    testWidgets('reduced motion: the countdown sits on the same centre', (t) async {
+      await profile();
+      await open(t, 'do box breathing', deps(), reduceMotion: true);
+      await tapKey(t, BreathView.yesKey);
+      await t.pump(const Duration(seconds: 50));
+      final sky = t.getRect(find.byKey(BreathView.skyKey));
+      final count = t.getRect(find.byKey(BreathView.countdownKey));
+      expect((count.center.dx - 180).abs(), lessThan(0.5));
+      expect((count.center.dy - sky.center.dy).abs(), lessThan(1));
+      expectFits(t);
+      await tapKey(t, BreathView.stopKey);
+    });
+  });
+
+  group('Close keeps one place', () {
+    testWidgets('steps, the session and the end share one Close rect', (t) async {
+      await profile();
+      await open(t, 'do box breathing', deps());
+      final step = t.getRect(find.byKey(BreathView.closeKey));
+      expect(step.height, greaterThanOrEqualTo(48));
+      expect(step.right, closeTo(360 - Space.s8, 0.5));
+      await tapKey(t, BreathView.yesKey);
+      await t.pump(const Duration(seconds: 2));
+      expect(t.getRect(find.byKey(BreathView.closeKey)), step, reason: 'session');
+      await tapKey(t, BreathView.stopKey);
+      expect(t.getRect(find.byKey(BreathView.closeKey)), step, reason: 'end');
+    });
+
+    testWidgets('Close during a session stops it and returns to the sky', (t) async {
+      await profile();
+      final views = await open(t, 'do box breathing', deps());
+      await tapKey(t, BreathView.yesKey);
+      await t.pump(const Duration(seconds: 3));
+      await tapKey(t, BreathView.closeKey);
+      expect(views.current, isNull);
+      expect(find.byKey(const ValueKey('sky')), findsOneWidget);
+      await t.pump(const Duration(seconds: 5));
+      expect(t.takeException(), isNull);
+    });
+  });
+
+  group('calm onboarding: one question a screen, large centred answers', () {
+    testWidgets('Yes and No are large and centred on every question', (t) async {
+      await open(t, 'do box breathing', deps());
+      for (var i = 0; i < 4; i++) {
+        final yes = t.getRect(find.byKey(BreathView.yesKey));
+        final no = t.getRect(find.byKey(BreathView.noKey));
+        expect(yes.height, greaterThanOrEqualTo(BreathView.answerHeight), reason: 'step $i');
+        expect(no.height, greaterThanOrEqualTo(BreathView.answerHeight), reason: 'step $i');
+        expect(((yes.left + no.right) / 2 - 180).abs(), lessThan(0.5), reason: 'step $i centred');
+        expect(find.byKey(BreathView.answerKey), findsOneWidget, reason: 'step $i');
+        // One question: one reply-face line on the screen besides the title.
+        final serif = t.widgetList<Text>(find.byType(Text)).where(
+            (w) => w.style?.fontFamily == Fonts.serif && w.style?.fontSize == TypeScale.reply(Palette.night.ink).fontSize);
+        expect(serif.length, 1, reason: 'step $i');
+        expectFits(t, reason: 'step $i');
+        await tapKey(t, i == 2 ? BreathView.noKey : BreathView.yesKey);
+      }
+    });
+
+    testWidgets('the onboarding completes with typed answers alone', (t) async {
+      await open(t, 'do box breathing', deps());
+      Future<void> type(String text) async {
+        await t.enterText(find.byKey(BreathView.answerKey), text);
+        await t.testTextInput.receiveAction(TextInputAction.done);
+        await t.pump();
+        await t.pump();
+      }
+
+      await type('yes'); // intro
+      expect(find.text(howText), findsOneWidget);
+      await type('yes'); // how
+      expect(find.text(screenQuestion), findsOneWidget);
+      await type('not sure');
+      expect(find.text(BreathView.missText), findsOneWidget);
+      expect(find.text(screenQuestion), findsOneWidget);
+      expectFits(t);
+      await type('no'); // screen
+      expect(find.text(advancedQuestion), findsOneWidget);
+      expect(find.text(BreathView.missText), findsNothing);
+      await type('no'); // advanced
+      expect(find.text('Start Box, fixed count now?'), findsOneWidget);
+      final saved = BreathProfile.decode(await store.getString(breathProfileKey))!;
+      expect(saved.advanced, isFalse);
+      expect(saved.cleared, {ScreenKind.standard});
+      await type('yes'); // start
+      await t.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(BreathView.visualKey), findsOneWidget);
+      await tapKey(t, BreathView.stopKey);
+    });
+
+    testWidgets('with the keyboard open the answers and the field stay above it', (t) async {
+      await open(t, 'do box breathing', deps(), size: const Size(360, 640), keyboard: 280);
+      for (final k in [BreathView.yesKey, BreathView.noKey, BreathView.answerKey]) {
+        await t.ensureVisible(find.byKey(k));
+        await t.pump();
+        expect(t.getRect(find.byKey(k)).bottom, lessThanOrEqualTo(640 - 280), reason: '$k');
+      }
+      expectFits(t);
     });
   });
 }

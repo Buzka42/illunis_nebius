@@ -1,7 +1,8 @@
 /// Design tokens (docs/UI_PLAN.md section 3, with the owner amendments A1 to
-/// A3): one palette per sky, night and day, five type steps, a 4 px spacing
-/// grid, two radii and a few slow motion curves. UI files use only these;
-/// no raw colours, font sizes or radii.
+/// A3 and the typography decision of 2026-10-29): one palette per sky, night
+/// and day, one type scale, the halo that text on the open sky may carry, a
+/// 4 px spacing grid, two radii and a few slow motion curves. UI files use
+/// only these; no raw colours, font sizes or radii.
 library;
 
 import 'dart:math' as math;
@@ -20,18 +21,20 @@ abstract final class SkyColors {
   static const nightInk2 = Color(0xFFB4BBCB); // moonlit grey
   static const nightAccent = Color(0xFFC5D4FF); // star tint, star_field.dart
   static const nightGlass = Color(0xFF0B1630); // CaptionInk.nightSky
-  static const nightHalo = Color(0x8C000000);
+  static const nightHalo = Color(0x990B1630); // night sky at 0.60
 
-  static const dayInk = Color(0xFF1C2333); // CaptionInk.dark
-  static const dayInk2 = Color(0xFF3E475A); // dusk ink
-  static const dayAccent = Color(0xFF24457F); // deepened zenith #3B78C9
+  // Day inks are deep: with no plate they sit on the day sky as the phone
+  // draws it, a mid-tone (median L 0.15, clouds to 0.34), not on haze.
+  static const dayInk = Color(0xFF141A27); // CaptionInk.dark
+  static const dayInk2 = Color(0xFF1F2738); // dusk ink
+  static const dayAccent = Color(0xFF132A55); // deepened zenith #3B78C9
   static const dayGlass = Color(0xFFE8EEF5); // CaptionInk.daySky
-  static const dayHalo = Color(0x99FFFFFF);
+  static const dayHalo = Color(0xFFF4F7FB); // day haze, scaled by Halo strength
 }
 
 /// Colours for one sky. Text pairs are [ink], [ink2] and [accent]; each
-/// reaches 4.5:1 on the glass as composited over the sky behind it (the
-/// glass tint is solved for that, see sky_light.dart).
+/// reaches 4.5:1 over the sky behind it, with a [Halo] solved for that
+/// where the sky alone is not enough.
 @immutable
 class Palette {
   const Palette({
@@ -55,7 +58,8 @@ class Palette {
   /// blue-white of the brightest stars at night, deep zenith blue by day.
   final Color accent;
 
-  /// The glass tint colour; its alpha is solved per surface.
+  /// The sky's own colour: the surface of popups (tooltips, the copy and
+  /// paste toolbar). Text on the sky has no surface.
   final Color glass;
 
   /// The 1 px light edge, brightest on top where the light falls.
@@ -64,7 +68,8 @@ class Palette {
   /// Selected text background (behind [ink]).
   final Color selection;
 
-  /// A soft halo for text set straight on the sky (captions).
+  /// The opposite ink, for the soft halo text on the open sky carries only
+  /// where the sky behind it is too close to [ink] ([Halo]).
   final Color halo;
 
   /// Field baselines and table rules (non-text, 3:1 or more on the glass).
@@ -91,7 +96,7 @@ class Palette {
     glass: SkyColors.dayGlass,
     rimTop: Color(0xB3FFFFFF), // white at 0.70
     rimSide: Color(0x59FFFFFF), // white at 0.35
-    selection: Color(0x4024457F), // accent at 0.25
+    selection: Color(0x40132A55), // accent at 0.25
     halo: SkyColors.dayHalo,
   );
 
@@ -134,17 +139,30 @@ double contrast(Color a, Color b) {
   return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
 }
 
-/// Bundled families (assets/fonts, SIL OFL 1.1).
+/// Bundled families (assets/fonts, SIL OFL 1.1; docs/UI_PLAN.md
+/// "Typography decision 2026-10-29").
 abstract final class Fonts {
-  /// Illunis speaks in Cormorant Garamond.
-  static const serif = 'CormorantGaramond';
+  /// Illunis speaks in Newsreader (variable wght and opsz).
+  static const serif = 'Newsreader';
 
-  /// You and the controls speak in Jost.
-  static const sans = 'Jost';
+  /// You and the controls speak in Source Sans 3 (variable wght).
+  static const sans = 'SourceSans3';
 }
 
-/// The five type steps. Tracking 0 on body text; figures lining in the
-/// serif and tabular in the sans steps that hold numbers.
+/// The one type scale for text on the sky, largest first. Sizes and line
+/// heights in logical px, tracking in px. The serif sets its optical size to
+/// the step's size, so the reply keeps sturdy strokes at 18 px and the title
+/// gets finer ones at 28. Figures are lining in both families, and tabular
+/// in the sans steps that hold numbers (log columns align).
+///
+/// | Step    | Family        | Size / line                 | wght | Tracking |
+/// |---------|---------------|-----------------------------|------|----------|
+/// | display | Newsreader    | 28 / 34                     | 400  | -0.2     |
+/// | caption | Newsreader    | 26 / 36 (voice mode)        | 400  | 0        |
+/// | reply   | Newsreader    | 22 / 30, 20 / 27, 18 / 25   | 420  | 0        |
+/// | body    | Source Sans 3 | 16 / 24                     | 420  | 0        |
+/// | label   | Source Sans 3 | 14 / 20                     | 600  | +0.2     |
+/// | note    | Source Sans 3 | 13 / 18                     | 460  | +0.2     |
 abstract final class TypeScale {
   /// The reply's fit ladder: size and line height, largest first.
   static const replySteps = [(22.0, 30.0), (20.0, 27.0), (18.0, 25.0)];
@@ -162,31 +180,97 @@ abstract final class TypeScale {
         fontFamily: family,
         fontSize: size,
         height: line / size,
-        fontVariations: [FontVariation('wght', wght)],
+        fontVariations: [
+          FontVariation('wght', wght),
+          // Newsreader's optical size axis runs 6 to 72.
+          if (family == Fonts.serif) FontVariation('opsz', size.clamp(6, 72).toDouble()),
+        ],
         fontWeight: FontWeight.values[((wght / 100).round() - 1).clamp(0, 8)],
         letterSpacing: tracking,
         fontFeatures: features,
         color: color,
       );
 
-  /// View titles, breath phase: Cormorant 28 / 34.
-  static TextStyle display(Color c) => _style(Fonts.serif, 28, 34, 420, c, features: _lnum);
+  /// View titles, the breath phase: Newsreader 28 / 34.
+  static TextStyle display(Color c) => _style(Fonts.serif, 28, 34, 400, c, tracking: -0.2, features: _lnum);
 
-  /// The AI reply: Cormorant 22 / 30, or a smaller [replySteps] size.
+  /// A spoken caption on the open sky (voice mode): Newsreader 26 / 36, or
+  /// Source Sans 3 Light with [sans]. [wght] overrides the step's weight.
+  static TextStyle caption(Color c, {bool sans = false, double size = 26, double? wght}) => sans
+      ? _style(Fonts.sans, size, size * 36 / 26, wght ?? 300, c)
+      : _style(Fonts.serif, size, size * 36 / 26, wght ?? 400, c, features: _lnum);
+
+  /// The AI reply: Newsreader 22 / 30, or a smaller [replySteps] size.
   static TextStyle reply(Color c, {double size = 22}) {
     final line = replySteps.firstWhere((s) => s.$1 == size, orElse: () => (size, size * 1.36)).$2;
-    return _style(Fonts.serif, size, line, 460, c, features: _lnum);
+    return _style(Fonts.serif, size, line, 420, c, features: _lnum);
   }
 
-  /// Input text, the user's line, log rows, empty states: Jost 16 / 24.
+  /// Input text, the user's line, log rows, empty states: Source Sans 3
+  /// 16 / 24.
   static TextStyle body(Color c, {bool tabular = false}) =>
-      _style(Fonts.sans, 16, 24, 380, c, features: tabular ? _tnum : null);
+      _style(Fonts.sans, 16, 24, 420, c, features: tabular ? _tnum : null);
 
-  /// Actions, table headers, dates, timers: Jost 14 / 20.
-  static TextStyle label(Color c) => _style(Fonts.sans, 14, 20, 480, c, tracking: 0.2, features: _tnum);
+  /// Actions, table headers, dates, timers: Source Sans 3 14 / 20.
+  static TextStyle label(Color c) => _style(Fonts.sans, 14, 20, 600, c, tracking: 0.2, features: _tnum);
 
-  /// Sources, the disclaimer, a host name, the "advanced" tag: Jost 13 / 18.
-  static TextStyle note(Color c) => _style(Fonts.sans, 13, 18, 420, c, tracking: 0.2, features: _tnum);
+  /// Sources, the disclaimer, a host name, the "advanced" tag: Source Sans 3
+  /// 13 / 18.
+  static TextStyle note(Color c) => _style(Fonts.sans, 13, 18, 460, c, tracking: 0.2, features: _tnum);
+}
+
+/// Text sits straight on the sky, with no plate behind it (owner,
+/// 2026-10-29). Where the sky behind a block of text is too close to its
+/// ink (the moon at night, a mid-blue zenith or dusk), the text carries a
+/// soft halo in the opposite ink ([Palette.halo]), only as strong as
+/// contrast needs: two zero-offset shadows, a tight one that lifts the
+/// stroke edge and a wide one that lets it fade into the sky. Never a box
+/// and never a gradient panel.
+abstract final class Halo {
+  /// Shadow blur radii, logical px.
+  static const double tight = 2, wide = 8;
+
+  /// How much of the halo colour sits right beside a stroke at full
+  /// strength, as a fraction of [Palette.halo]'s alpha. Measured, not
+  /// guessed: halo_test renders every step with the halo over flat skies and
+  /// reads the pixels next to the strokes; this is the smallest it found,
+  /// rounded down.
+  static const double reach = 0.33;
+
+  /// Strength with no look at the sky (no SkyLight: tests, voice builds).
+  static const double unknown = 1;
+
+  /// The shadows for [halo] at [strength] (0 none .. 1 full).
+  static List<Shadow> shadows(Color halo, double strength) {
+    if (strength <= 0) return const [];
+    final c = halo.withValues(alpha: halo.a * strength.clamp(0.0, 1.0));
+    return [Shadow(color: c, blurRadius: tight), Shadow(color: c, blurRadius: wide)];
+  }
+
+  /// The sky right beside a stroke of text with [halo] at [strength] over
+  /// [sky]: what the ink is read against.
+  static Color behind(Color halo, double strength, Color sky) =>
+      Color.alphaBlend(halo.withValues(alpha: halo.a * reach * strength.clamp(0.0, 1.0)), sky);
+}
+
+/// The weakest halo, in steps of 0.05 from none, at which every text of [p]
+/// reaches [target] over every colour of [skies]; 1 (full) when even that
+/// does not, which is as far as a soft halo goes.
+double solveHalo(Palette p, List<Color> skies, {double target = GlassSpec.target + GlassSpec.margin}) {
+  bool ok(double s) {
+    for (final sky in skies) {
+      final under = Halo.behind(p.halo, s, sky);
+      for (final t in p.texts) {
+        if (contrast(t, under) < target) return false;
+      }
+    }
+    return true;
+  }
+
+  for (var i = 0; i <= 20; i++) {
+    if (ok(i / 20)) return i / 20;
+  }
+  return 1;
 }
 
 /// The 4 px grid.
@@ -231,7 +315,8 @@ abstract final class Motion {
   static const viewCurve = Curves.easeOutCubic;
   static const double viewRise = 12;
 
-  /// The glass thickening or clearing as the sky behind it changes.
+  /// A halo (once the glass tint) strengthening or fading as the sky
+  /// behind the text changes.
   static const glass = Duration(milliseconds: 900);
   static const glassCurve = Curves.easeInOutSine;
 
@@ -243,7 +328,10 @@ abstract final class Motion {
   static const reduced = Duration(milliseconds: 120);
 }
 
-/// One glass depth (UI_PLAN 3.2, A1: as clear as contrast allows).
+/// The contrast target, and the tint model of the glass plates that text
+/// sat on until 2026-10-29 (UI_PLAN 3.2). No widget paints a plate now;
+/// [target] and [margin] drive [solveHalo], [sigma] smooths [SkyProbe]'s
+/// look at the sky, and SkyLight.glassAlpha still answers in these terms.
 abstract final class GlassSpec {
   /// Backdrop blur sigma, logical px.
   static const double sigma = 14;

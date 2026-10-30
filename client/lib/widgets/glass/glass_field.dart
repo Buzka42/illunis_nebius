@@ -1,7 +1,8 @@
-/// The one text field (chat, logs, breath): Jost body text, a quiet ink2
-/// hint, the accent cursor, a hairline baseline in the rule colour, and an
+/// The one text field (chat, logs, breath): body text, a quiet ink2 hint,
+/// the accent cursor, a hairline baseline in the rule colour, and an
 /// optional send glyph that stays dim and inert until there is text. Enter
-/// submits. It has no glass of its own: it sits on the glass it is in.
+/// submits. It has no surface: its text sits on the sky, with the halo of
+/// the [GlassPanel] it is in.
 library;
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../../ui/icons.dart';
 import '../../ui/sky_light.dart';
 import '../../ui/tokens.dart';
+import 'glass_surface.dart';
 
 class GlassField extends StatefulWidget {
   const GlassField({
@@ -103,11 +105,13 @@ class _GlassFieldState extends State<GlassField> {
   Widget build(BuildContext context) {
     final p = SkyLight.paletteOf(context);
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
+    // A field does not read DefaultTextStyle: it takes the halo directly.
+    final halo = TextHalo.of(context);
     final field = TextField(
       key: widget.fieldKey,
       controller: _text,
       focusNode: _focus,
-      style: TypeScale.body(p.ink),
+      style: TypeScale.body(p.ink).copyWith(shadows: halo),
       cursorColor: p.accent,
       cursorWidth: 1.5,
       minLines: 1,
@@ -117,7 +121,7 @@ class _GlassFieldState extends State<GlassField> {
       decoration: InputDecoration(
         hintText: widget.hint,
         hintMaxLines: widget.hintMaxLines,
-        hintStyle: TypeScale.body(p.ink2),
+        hintStyle: TypeScale.body(p.ink2).copyWith(shadows: halo),
         border: InputBorder.none,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(vertical: Space.s12),

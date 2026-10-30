@@ -1,5 +1,5 @@
 /// The app theme from the tokens, so nothing falls back to Material
-/// defaults: Jost everywhere, star-blue (or zenith-blue) cursor, selection
+/// defaults: the sans (Source Sans 3) everywhere, star-blue (or zenith-blue) cursor, selection
 /// and handles, no ripple, tooltips and the copy / paste toolbar on the
 /// glass colours, controls with the small radius.
 library;

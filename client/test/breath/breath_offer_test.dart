@@ -215,9 +215,13 @@ void main() {
       await t.pump(const Duration(milliseconds: 100));
       expect(find.byKey(BreathView.visualKey), findsNothing);
       expect(find.byKey(BreathView.countdownKey), findsOneWidget);
-      expect(find.text('Breathe in\n5'), findsOneWidget);
+      // The phase above, the seconds left on the ring's centre.
+      String count() => t.widget<Text>(find.byKey(BreathView.countdownKey)).data!;
+      expect(find.text('Breathe in'), findsOneWidget);
+      expect(count(), '5');
       await t.pump(const Duration(seconds: 5));
-      expect(find.text('Breathe out\n5'), findsOneWidget);
+      expect(find.text('Breathe out'), findsOneWidget);
+      expect(count(), '5');
       await tapKey(t, BreathView.stopKey);
       expect(t.takeException(), isNull);
     });

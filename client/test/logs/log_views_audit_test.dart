@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:illunis_client/app/persistence.dart';
 import 'package:illunis_client/app/server_port.dart';
 import 'package:illunis_client/app/view_requests.dart';
+import 'package:illunis_client/breath/breath_view.dart';
+import 'package:illunis_client/breath/breath_wiring.dart';
 import 'package:illunis_client/health/daily_signals.dart';
 import 'package:illunis_client/logs/log_entry.dart';
 import 'package:illunis_client/logs/log_math.dart';
@@ -18,6 +20,7 @@ import 'package:illunis_client/ui/sky_light.dart';
 import 'package:illunis_client/ui/tokens.dart';
 
 import '../app/view_audit_helpers.dart';
+import '../breath/breath_fixtures.dart';
 import 'log_fixtures.dart' as fx;
 
 const day = fx.day; // Wednesday 28 October 2026
@@ -564,6 +567,60 @@ void main() {
       expect(t.widget<Text>(find.text('Food')).style!.color, Palette.night.ink);
     });
 
+    testWidgets('row values end at the right edge in tabular figures, so digits line up', (t) async {
+      for (final (kind, entries) in [
+        (ViewKind.food, longFood),
+        (ViewKind.cardio, longCardio),
+        (ViewKind.logs, <LogEntry>[...longFood, halfMarathon]),
+      ]) {
+        await pumpView(t, kind, await deps(t, entries: entries));
+        final rows = t.widgetList<LogRow>(find.byType(LogRow)).toList();
+        expect(rows, isNotEmpty, reason: kind.name);
+        for (final r in rows) {
+          if (r.value.isEmpty) continue;
+          final v = t.widget<Text>(find.descendant(of: find.byWidget(r), matching: find.text(r.value)));
+          expect(v.style!.fontFeatures, contains(const FontFeature.tabularFigures()), reason: '${kind.name} ${r.value}');
+          expect(v.textAlign, TextAlign.end, reason: '${kind.name} ${r.value}');
+        }
+      }
+    });
+
+    testWidgets('headings share one face and one space above, in every view', (t) async {
+      final styles = <String, TextStyle>{};
+      final tops = <String, double>{};
+      Future<void> grab(ViewKind kind, List<LogEntry> entries, String heading) async {
+        await pumpView(t, kind, await deps(t, entries: entries));
+        final f = find.text(heading).first;
+        styles[heading] = t.widget<Text>(f).style!;
+        // The gap from the heading's padding box to its text.
+        final pad = find.ancestor(of: f, matching: find.byType(Padding)).first;
+        tops[heading] = t.getRect(f).top - t.getRect(pad).top;
+      }
+
+      await grab(ViewKind.food, longFood, 'Breakfast');
+      await grab(ViewKind.strength, [longStrength], 'Squat');
+      await grab(ViewKind.run, [oneRun], 'Run 1');
+      await grab(ViewKind.logs, [oneRun], 'Runs');
+      final first = styles.values.first;
+      for (final MapEntry(:key, :value) in styles.entries) {
+        expect(value.fontFamily, first.fontFamily, reason: key);
+        expect(value.fontSize, first.fontSize, reason: key);
+        expect(value.fontVariations, first.fontVariations, reason: key);
+        expect(value.color, first.color, reason: key);
+        expect(tops[key], logHeadingPadding.top, reason: key);
+      }
+    });
+
+    testWidgets('the rule under the day sits at one height in every view', (t) async {
+      double? at;
+      for (final kind in kinds) {
+        await pumpView(t, kind, await deps(t, signals: const []));
+        final empty = t.getRect(find.byKey(LogKeys.empty)).top;
+        at ??= empty;
+        expect(empty, at, reason: kind.name);
+      }
+    });
+
     testWidgets('the hint is the bare example, never "e.g."', (t) async {
       await pumpView(t, ViewKind.food, await deps(t));
       final field = t.widget<TextField>(find.byKey(LogKeys.field));
@@ -573,6 +630,36 @@ void main() {
   });
 
   group('close', () {
+    for (final (size, scale) in [(phone, 1.0), (phone, 2.0), (const Size(1000, 800), 1.0)]) {
+      testWidgets('Close sits in one place in every view, breathwork too: '
+          '${size.width.toInt()} px, ${scale}x text', (t) async {
+        Rect? at;
+        for (final kind in ViewKind.values.where((k) => k != ViewKind.breathwork)) {
+          await pumpView(t, kind, await deps(t, signals: const []), size: size, textScale: scale);
+          final r = t.getRect(find.byKey(LogKeys.close));
+          at ??= r;
+          expect(r, at, reason: kind.name);
+        }
+        expect(at!.right, closeTo(size.width - Space.s8, 0.5));
+        expect(at.height, greaterThanOrEqualTo(48));
+        // The breathwork view, on its first step.
+        phoneSurface(t, size: size);
+        await t.pumpWidget(MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(size: size, disableAnimations: true, textScaler: TextScaler.linear(scale)),
+            child: BreathView(
+              request: const BreathRequest('box breathing'),
+              deps: BreathDeps(library: Future.value(loadAssetLibrary()), store: InMemoryStateStore()),
+              onClose: () {},
+            ),
+          ),
+        ));
+        await t.pump();
+        await t.pump();
+        expect(t.getRect(find.byKey(BreathView.closeKey)), at, reason: 'breathwork');
+      });
+    }
+
     for (final kind in [...ViewKind.values.where((k) => k != ViewKind.breathwork)]) {
       testWidgets('${kind.name}: Close is a 48 px target that calls back once', (t) async {
         await pumpView(t, kind, await deps(t, signals: const []));

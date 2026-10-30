@@ -1,8 +1,8 @@
-/// A view's one glass sheet over the sky (logs, breathwork, the
-/// placeholder): it starts just under the status bar with rounded top
-/// corners and runs to the bottom edge, and its header carries the title
-/// with Close at the top right. Its tint is solved like any glass, so by
-/// night it is mostly sky and by day it takes the day inks.
+/// A view's region over the sky (logs, breathwork, the placeholder): it
+/// starts just under the status bar and runs to the bottom edge, and its
+/// header carries the title with Close at the top right. There is no sheet
+/// to see: the view's text sits straight on the sky in the day or night
+/// inks, with the halo its [GlassPanel] solves where the sky needs one.
 library;
 
 import 'package:flutter/material.dart';
@@ -17,7 +17,7 @@ class GlassSheet extends StatelessWidget {
 
   final Widget child;
 
-  /// Inside the glass. The right side is smaller so Close's 48 px target
+  /// Inside the region. The right side is smaller so Close's 48 px target
   /// keeps its word on the 16 px gutter.
   final EdgeInsets padding;
 

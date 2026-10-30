@@ -39,9 +39,8 @@ class CardioView extends StatelessWidget {
   final LogViews deps;
   final VoidCallback onClose;
 
-  /// The field's hint shows the example, so it is not said twice here.
-  static String get emptyText => 'Nothing logged for this day. Type the session below with its time and heart '
-      'rate. Add calories if your device showed them.';
+  /// One line; the field's hint shows the example, so it is not said twice.
+  static const emptyText = 'Type a session and its time below.';
 
   @override
   Widget build(BuildContext context) => LogDayView(

@@ -2,8 +2,9 @@
 /// B7, decisions 2026-10-28 and 2026-10-28b, plan E6).
 ///
 /// [BreathFlow] is a pure step machine the breath view renders. Every step
-/// is a Yes / No question or a typed choice; nothing moves on without an
-/// answer, and a session starts only after a yes to "Start ... now?".
+/// is one Yes / No question (tapped, or typed as a plain yes or no) or a
+/// typed choice; nothing moves on without an answer, and a session starts
+/// only after a yes to "Start ... now?".
 ///
 /// First run (no stored profile): what the sessions are for and not for, how
 /// they work, the default screen question, then "Do you practise breathwork
@@ -24,26 +25,58 @@ import 'technique.dart';
 /// Store key for [BreathProfile] (the user's own onboarding answers).
 const breathProfileKey = 'breath_profile';
 
-/// The questions for each screen (research section 4 and section 5's
-/// default screen). Phrased without diagnosing.
-const screenQuestions = <ScreenKind, String>{
-  ScreenKind.standard: 'Do you have epilepsy or seizures, a heart or heart rhythm condition, high blood pressure '
-      'that is not under control, a pregnancy, recent psychosis or mania, or recent fainting linked to breathing?',
-  ScreenKind.holds: 'Do you have a lung or breathing condition, high blood pressure, a heart condition, '
-      'or a pregnancy?',
-  ScreenKind.forceful: 'Do you have epilepsy, high blood pressure, a heart condition, a pregnancy, '
-      'or recent stomach surgery, a hernia or a stomach ulcer?',
+/// The one question every screen asks; [screenItems] lists what it covers
+/// (research section 4 and section 5's default screen), one short line per
+/// condition. Phrased without diagnosing.
+const screenQuestion = 'Do any of these apply to you?';
+
+const screenItems = <ScreenKind, List<String>>{
+  ScreenKind.standard: [
+    'Epilepsy or seizures',
+    'A heart or heart rhythm condition',
+    'High blood pressure that is not under control',
+    'Pregnancy',
+    'Recent psychosis or mania',
+    'Recent fainting linked to breathing',
+  ],
+  ScreenKind.holds: [
+    'A lung or breathing condition',
+    'High blood pressure',
+    'A heart condition',
+    'Pregnancy',
+  ],
+  ScreenKind.forceful: [
+    'Epilepsy',
+    'High blood pressure',
+    'A heart condition',
+    'Pregnancy',
+    'Recent stomach surgery, a hernia or a stomach ulcer',
+  ],
 };
 
 /// Used when no technique's own notice is at hand (research 6.5).
 const defaultNotice = 'This is not medical advice. If you have a health condition or feel unwell, '
     'speak to a qualified clinician before you practise.';
 
-const introText = 'Breathwork sessions here are for a few quiet minutes with your breath. They are not '
-    'medical advice and not a treatment for any condition.';
-const howText = 'A shape grows as you breathe in and shrinks as you breathe out. Spoken cues are optional. '
-    'Stop and Pause buttons stay on screen, and you can stop at any time.';
+const introText = 'A few quiet minutes with your breath. This is not medical advice and not a treatment '
+    'for any condition.';
+const howText = 'A ring of light grows as you breathe in and shrinks as you breathe out. Spoken cues are '
+    'optional. Pause and Stop stay on screen. You can stop at any time.';
 const advancedQuestion = 'Do you practise breathwork at an advanced level?';
+const advancedBody = 'Advanced techniques are offered only if you answer yes.';
+
+/// What a typed answer may be. Only a plain yes or no counts: on a health
+/// screen, "not sure" must never read as no.
+const _typedYes = {'yes', 'y', 'yeah', 'yep', 'yup', 'yes please'};
+const _typedNo = {'no', 'n', 'nope', 'no thanks', 'no thank you'};
+
+/// True for a typed yes, false for a typed no, null for anything else.
+bool? typedYesNo(String raw) {
+  final t = raw.toLowerCase().replaceAll(RegExp('[^a-z ]'), ' ').trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (_typedYes.contains(t)) return true;
+  if (_typedNo.contains(t)) return false;
+  return null;
+}
 
 class BreathProfile {
   const BreathProfile({required this.advanced, this.cleared = const {}});
@@ -95,13 +128,20 @@ class BreathLoading extends BreathStep {
 
 enum AskKind { intro, how, screen, advanced, start }
 
-/// A Yes / No question. [body] is shown above [question].
+/// A Yes / No question, answered by a tap or a typed yes or no. [body] is
+/// shown above [question], [items] under it (a screen's conditions).
 class BreathAsk extends BreathStep {
-  const BreathAsk(this.kind, this.question, {this.body, this.screen});
+  const BreathAsk(this.kind, this.question, {this.body, this.screen, this.items = const [], this.miss = false});
   final AskKind kind;
   final String question;
   final String? body;
   final ScreenKind? screen;
+  final List<String> items;
+
+  /// The last typed answer was neither yes nor no.
+  final bool miss;
+
+  BreathAsk missed() => BreathAsk(kind, question, body: body, screen: screen, items: items, miss: true);
 }
 
 /// The user types (or taps) a technique name. [listed] is non-null only
@@ -177,7 +217,7 @@ class BreathFlow extends ChangeNotifier {
         }
         if (_onboarding) {
           _pendingCleared.add(s.screen!);
-          _go(const BreathAsk(AskKind.advanced, advancedQuestion));
+          _go(const BreathAsk(AskKind.advanced, advancedQuestion, body: advancedBody));
           return;
         }
         _profile = _profile!.clear(s.screen!);
@@ -200,6 +240,19 @@ class BreathFlow extends ChangeNotifier {
   }
 
   final _pendingCleared = <ScreenKind>{};
+
+  /// A typed answer to the current [BreathAsk]: a plain yes or no answers
+  /// it like a tap; anything else keeps the question and says so.
+  Future<void> answerTyped(String typed) async {
+    final s = _step;
+    if (s is! BreathAsk) return;
+    final yes = typedYesNo(typed);
+    if (yes == null) {
+      _go(s.missed());
+      return;
+    }
+    await answer(yes);
+  }
 
   /// A typed technique name (or a tapped list entry's name).
   void choose(String typed) {
@@ -241,7 +294,7 @@ class BreathFlow extends ChangeNotifier {
   void _nextScreenOrStart() {
     final t = _technique!;
     for (final s in t.screens) {
-      if (screenQuestions.containsKey(s) && !_profile!.cleared.contains(s)) {
+      if (screenItems.containsKey(s) &&!_profile!.cleared.contains(s)) {
         _go(_screenAsk(s));
         return;
       }
@@ -251,7 +304,8 @@ class BreathFlow extends ChangeNotifier {
         body: '${t.copy.intent} It lasts about $minutes minute${minutes == 1 ? '' : 's'}.'));
   }
 
-  BreathAsk _screenAsk(ScreenKind s) => BreathAsk(AskKind.screen, screenQuestions[s]!, screen: s);
+  BreathAsk _screenAsk(ScreenKind s) =>
+      BreathAsk(AskKind.screen, screenQuestion, screen: s, items: screenItems[s]!);
 
   void _declined() => _go(const BreathNotice('No session started. Ask for breathwork whenever you like.'));
 

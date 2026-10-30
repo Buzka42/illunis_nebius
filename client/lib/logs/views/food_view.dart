@@ -4,7 +4,6 @@ library;
 
 import 'package:flutter/material.dart';
 
-import '../../ui/tokens.dart';
 import '../log_entry.dart';
 import '../log_math.dart';
 import 'log_frame.dart';
@@ -18,7 +17,7 @@ String _amount(FoodItem i) {
 
 List<Widget> foodRows(List<LogEntry> entries) => [
       for (final e in entries.whereType<FoodEntry>()) ...[
-        if (e.meal != null) LogHeading(_cap(e.meal!), padding: const EdgeInsets.only(top: Space.s8)),
+        if (e.meal != null) LogHeading(_cap(e.meal!)),
         for (final i in e.items) LogRow(i.name, _amount(i)),
       ],
     ];
@@ -35,9 +34,8 @@ class FoodView extends StatelessWidget {
   final LogViews deps;
   final VoidCallback onClose;
 
-  /// The field's hint shows the example, so it is not said twice here.
-  static String get emptyText => 'Nothing logged for this day. Type what you ate below. Add calories only if you '
-      'know them.';
+  /// One line; the field's hint shows the example, so it is not said twice.
+  static const emptyText = 'Type what you ate below to log it.';
 
   @override
   Widget build(BuildContext context) => LogDayView(
