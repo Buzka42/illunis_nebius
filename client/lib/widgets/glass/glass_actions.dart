@@ -104,7 +104,11 @@ class _Cell extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = action.primary ? palette.accent : palette.ink;
     // Material below resets DefaultTextStyle, so the halo is passed here.
-    final style = TypeScale.label(color).copyWith(shadows: TextHalo.of(context));
+    // Outside a GlassPanel (the breathwork controls) there is no panel halo: use the sky halo for the palette, so the
+    // words stay readable over white cloud (readability pass, 2026-10-30).
+    final panel = TextHalo.of(context);
+    final shadows = panel.isNotEmpty ? panel : Halo.shadows(palette.halo, 1);
+    final style = TypeScale.label(color).copyWith(shadows: shadows);
     final text = Text(action.label, textAlign: TextAlign.center, style: style);
     return Semantics(
       button: true,
