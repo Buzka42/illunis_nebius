@@ -1,5 +1,5 @@
-/// The one text field (chat, logs, breath): body text, a quiet ink2 hint,
-/// the accent cursor, a hairline baseline in the rule colour, and an
+/// The one text field (chat, logs, breath): body text and its hint in
+/// inverse colour ([TypeScale.inverseText]), the accent cursor, a hairline baseline in the rule colour, and an
 /// optional send glyph that stays dim and inert until there is text. Enter
 /// submits. It has no surface: its text sits on the sky, with the halo of
 /// the [GlassPanel] it is in.

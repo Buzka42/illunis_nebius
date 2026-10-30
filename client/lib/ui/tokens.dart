@@ -32,9 +32,12 @@ abstract final class SkyColors {
   static const dayHalo = Color(0xFFF4F7FB); // day haze, scaled by Halo strength
 }
 
-/// Colours for one sky. Text pairs are [ink], [ink2] and [accent]; each
-/// reaches 4.5:1 over the sky behind it, with a [Halo] solved for that
-/// where the sky alone is not enough.
+/// Colours for one sky. Text on the sky is inverse-colour
+/// ([TypeScale.inverseText], owner 2026-10-30): it takes no ink from here,
+/// only the [halo] solved for it ([solveHalo]). [ink], [ink2] and [accent]
+/// colour the glyphs, the cursor and the rules, and are the text pairs again
+/// if inverse text is switched off; each reaches 4.5:1 over the sky behind
+/// it, with a [Halo] solved for that where the sky alone is not enough.
 @immutable
 class Palette {
   const Palette({
@@ -153,9 +156,18 @@ abstract final class Fonts {
 /// heights in logical px, tracking in px. The serif sets its optical size to
 /// the step's size, so the reply keeps sturdy strokes at 18 px and the title
 /// gets finer ones at 28. Figures are lining in both families, and tabular
-/// in the sans steps that hold numbers (log columns align).
+/// in the sans steps that hold numbers (log columns align). Every step draws
+/// inverse-colour text ([inverseText]): the colour a step is given is kept
+/// only for the fallback.
 ///
-/// | Step    | Family        | Size / line                 | wght | Tracking |
+/// Inverse text by night needs no lighter base: over the near-black sky the
+/// stroke is near white (halo_test: 6.1:1 over the brightest upper night sky
+/// sampled, 9.7:1 where the reply sits, 8.2:1 over the moon, all with no
+/// halo). It is weakest over a mid-tone, whose inverse is a mid-tone; the
+/// light day halo carries the day sky (the median reads 4.0 to 4.5:1 with
+/// the full halo at [inverseOpacity] 0.8).
+///
+/// | Step   | Family        | Size / line                 | wght | Tracking |
 /// |---------|---------------|-----------------------------|------|----------|
 /// | display | Newsreader    | 28 / 34                     | 400  | -0.2     |
 /// | caption | Newsreader    | 26 / 36 (voice mode)        | 400  | 0        |
@@ -188,8 +200,28 @@ abstract final class TypeScale {
         fontWeight: FontWeight.values[((wght / 100).round() - 1).clamp(0, 8)],
         letterSpacing: tracking,
         fontFeatures: features,
-        color: color,
+        // Inverse-colour text (owner, 2026-10-30): white at [inverseOpacity] through a difference blend, so each
+        // stroke shows the opposite of the sky under it ([inverseOf]). The ink [color] is kept only for the
+        // [inverseText] false fallback.
+        color: inverseText ? null : color,
+        foreground: inverseText ? inversePaint() : null,
       );
+
+  /// Text on the sky is inverse-colour (owner decision, 2026-10-30): the default. False goes back to the
+  /// palette inks.
+  static const bool inverseText = true;
+
+  /// The alpha of the white that is difference-blended over the sky (owner, 2026-10-30): clearly apart from
+  /// the sky, softer than the full inverse. A stroke shows `a + d - 2ad` per channel over sky `d`.
+  static const double inverseOpacity = 0.8;
+
+  /// The paint of inverse text: white at [inverseOpacity], [BlendMode.difference].
+  static Paint inversePaint() => Paint()
+    ..color = const Color.from(alpha: inverseOpacity, red: 1, green: 1, blue: 1)
+    ..blendMode = BlendMode.difference;
+
+  /// True when [style] draws inverse-colour text (tests and audits).
+  static bool isInverse(TextStyle? style) => style?.foreground?.blendMode == BlendMode.difference;
 
   /// View titles, the breath phase: Newsreader 28 / 34.
   static TextStyle display(Color c) => _style(Fonts.serif, 28, 34, 400, c, tracking: -0.2, features: _lnum);
@@ -243,26 +275,65 @@ abstract final class Halo {
   /// The shadows for [halo] at [strength] (0 none .. 1 full).
   static List<Shadow> shadows(Color halo, double strength) {
     if (strength <= 0) return const [];
-    final c = halo.withValues(alpha: halo.a * strength.clamp(0.0, 1.0));
-    return [Shadow(color: c, blurRadius: tight), Shadow(color: c, blurRadius: wide)];
+    final s = strength.clamp(0.0, 1.0);
+    final c = halo.withValues(alpha: (halo.a * s * boost).clamp(0.0, 1.0));
+    // Readability pass (owner, 2026-10-30): a third, wider layer and a stronger edge, so dark ink keeps its letters over
+    // deep blue patches of the day sky. Over white cloud the edge is invisible.
+    return [
+      Shadow(color: c, blurRadius: tight),
+      Shadow(color: c, blurRadius: wide),
+      Shadow(color: c, blurRadius: wider),
+    ];
   }
+
+  /// Edge strength multiplier over the measured [reach] (readability pass).
+  static const double boost = 1.6;
+  static const double wider = 16;
 
   /// The sky right beside a stroke of text with [halo] at [strength] over
   /// [sky]: what the ink is read against.
   static Color behind(Color halo, double strength, Color sky) =>
       Color.alphaBlend(halo.withValues(alpha: halo.a * reach * strength.clamp(0.0, 1.0)), sky);
+
+  /// How much of the halo colour lies under a stroke at full strength, as a
+  /// fraction of [Palette.halo]'s alpha: what inverse text inverts. Measured
+  /// like [reach] (halo_test reads the stroke cores): 0.81 to 0.88 by day,
+  /// above 1 at night (the [boost]), the smallest rounded down.
+  static const double cover = 0.8;
+
+  /// The colour under a stroke of text with [halo] at [strength] over [sky]:
+  /// inverse text shows [inverseOf] this.
+  static Color under(Color halo, double strength, Color sky) =>
+      Color.alphaBlend(halo.withValues(alpha: (halo.a * cover * strength.clamp(0.0, 1.0)).clamp(0.0, 1.0)), sky);
+}
+
+/// What a stroke of inverse text ([TypeScale.inverseText]) shows over
+/// [under]: white at [opacity] through a difference blend, `a + d - 2ad` per
+/// sRGB channel, as the GPU blends it. Opaque.
+Color inverseOf(Color under, {double opacity = TypeScale.inverseOpacity}) {
+  double ch(double d) => (opacity + d - 2 * opacity * d).clamp(0.0, 1.0);
+  return Color.from(alpha: 1, red: ch(under.r), green: ch(under.g), blue: ch(under.b));
+}
+
+/// The contrast of text with [p]'s halo at [strength] over [sky], for each
+/// text: one figure for inverse text (the stroke over what is under it,
+/// against the sky beside it), else each of [Palette.texts] against the sky
+/// beside it.
+List<double> textContrasts(Palette p, double strength, Color sky) {
+  final beside = Halo.behind(p.halo, strength, sky);
+  if (TypeScale.inverseText) return [contrast(inverseOf(Halo.under(p.halo, strength, sky)), beside)];
+  return [for (final t in p.texts) contrast(t, beside)];
 }
 
 /// The weakest halo, in steps of 0.05 from none, at which every text of [p]
 /// reaches [target] over every colour of [skies]; 1 (full) when even that
-/// does not, which is as far as a soft halo goes.
+/// does not, which is as far as a soft halo goes. With inverse text the
+/// halo can also hurt (a dark halo under strokes over the moon): the search
+/// from none stops at the first strength that reaches the target.
 double solveHalo(Palette p, List<Color> skies, {double target = GlassSpec.target + GlassSpec.margin}) {
   bool ok(double s) {
     for (final sky in skies) {
-      final under = Halo.behind(p.halo, s, sky);
-      for (final t in p.texts) {
-        if (contrast(t, under) < target) return false;
-      }
+      if (textContrasts(p, s, sky).any((c) => c < target)) return false;
     }
     return true;
   }

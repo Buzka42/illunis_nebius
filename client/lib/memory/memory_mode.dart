@@ -1,7 +1,9 @@
 /// Where long-term memory lives, chosen by voice: once after the interview
 /// ("on this phone, or with your assistant?") and any time later with "use
 /// my assistant for memory" or "keep memory on the phone". The phone is the
-/// default. The VPS brain is named but refused until it exists.
+/// default. The VPS brain is named but refused until it exists. With
+/// [MemoryModeSetup.typed] (voice off) the same question is answered by
+/// typing and its prompts say "type" instead of "say".
 ///
 /// Stored as one JSON string under [StoreKeys.memoryMode]. Logs carry codes
 /// only, never a transcript.
@@ -121,6 +123,13 @@ abstract final class MemoryModePrompt {
   static const vps = 'Memory on your own server is not available yet. I will keep it on this phone.';
 }
 
+/// Typed prompts (voice off); the replies after a choice are shared.
+abstract final class TypedMemoryModePrompt {
+  static const offer = 'Where should I keep long-term memory: on this phone, or with your assistant? '
+      'Type phone or assistant.';
+  static const reask = 'Please type phone or assistant.';
+}
+
 // ---- Setup step -------------------------------------------------------------
 
 class MemoryModeSetup {
@@ -131,6 +140,7 @@ class MemoryModeSetup {
     this.listen,
     bool Function()? ready,
     bool Function()? assistantAvailable,
+    this.typed = false,
     void Function(String line)? log,
   })  : _ready = ready ?? (() => true),
         _assistantAvailable = assistantAvailable ?? (() => true),
@@ -148,6 +158,9 @@ class MemoryModeSetup {
 
   /// False when no assistant link is configured (offline build).
   final bool Function() _assistantAvailable;
+
+  /// Typed wording (voice off): see the library comment.
+  final bool typed;
   final void Function(String) _log;
 
   MemoryModeChoice _choice = const MemoryModeChoice();
@@ -169,7 +182,7 @@ class MemoryModeSetup {
     _queue = _queue.then((_) async {
       if (_asking || _choice.chosen || !_ready()) return;
       _asking = true;
-      await _ask(MemoryModePrompt.offer);
+      await _ask(typed ? TypedMemoryModePrompt.offer : MemoryModePrompt.offer);
     });
     return _queue;
   }
@@ -188,7 +201,7 @@ class MemoryModeSetup {
       final m = intent ?? parseMemoryModeAnswer(text);
       if (m == null) {
         _log('setup: reask step=memory_mode');
-        return await _ask(MemoryModePrompt.reask);
+        return await _ask(typed ? TypedMemoryModePrompt.reask : MemoryModePrompt.reask);
       }
       await choose(m);
     } catch (e) {

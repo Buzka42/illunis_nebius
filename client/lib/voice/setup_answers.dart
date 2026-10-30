@@ -134,10 +134,11 @@ SkillPackChoice? parseSkillPack(String raw, Set<String> ids) {
   return id == null ? null : SkillPackChoice(id);
 }
 
-const _yesWords = {'yes', 'yeah', 'yep', 'yup', 'correct', 'right', 'sure', 'ok', 'okay', 'confirm'};
-const _noWords = {'no', 'nope', 'wrong', 'not', 'incorrect'};
+// "y" and "n" are typed short forms (voice off).
+const _yesWords = {'yes', 'y', 'yeah', 'yep', 'yup', 'correct', 'right', 'sure', 'ok', 'okay', 'confirm'};
+const _noWords = {'no', 'n', 'nope', 'wrong', 'not', 'incorrect'};
 
-/// "yes" or "no". Both or neither is unreadable.
+/// "yes" or "no", spoken or typed. Both or neither is unreadable.
 ConfirmAnswer? parseConfirm(String raw) {
   final w = _words(raw);
   final yes = w.any(_yesWords.contains);

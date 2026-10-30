@@ -4,6 +4,7 @@
 // keyboard or a large text size never pushing the view off screen.
 // Synthetic data only.
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:illunis_client/app/persistence.dart';
 import 'package:illunis_client/app/server_port.dart';
@@ -558,13 +559,15 @@ void main() {
       expect(text.style!.fontFamily, Fonts.sans);
     });
 
-    testWidgets('by day the sheet takes the day ink', (t) async {
+    testWidgets('by day the sheet takes the day halo, its text inverse-colour', (t) async {
       await pumpView(t, ViewKind.food, await deps(t, entries: longFood), day: true);
-      expect(t.widget<Text>(find.text('Food')).style!.color, Palette.day.ink);
-      expect(t.widget<Text>(find.text('rice')).style!.color, Palette.day.ink);
-      expect(t.widget<Text>(find.text('150 g · 195 kcal')).style!.color, Palette.day.ink);
+      for (final s in ['Food', 'rice', '150 g · 195 kcal']) {
+        final style = t.renderObject<RenderParagraph>(find.text(s)).text.style!;
+        expect(TypeScale.isInverse(style), isTrue, reason: s);
+        expect(style.shadows!.first.color.withValues(alpha: 1), Palette.day.halo.withValues(alpha: 1), reason: s);
+      }
       await pumpView(t, ViewKind.food, await deps(t, entries: longFood));
-      expect(t.widget<Text>(find.text('Food')).style!.color, Palette.night.ink);
+      expect(TypeScale.isInverse(t.widget<Text>(find.text('Food')).style), isTrue);
     });
 
     testWidgets('row values end at the right edge in tabular figures, so digits line up', (t) async {
@@ -607,6 +610,7 @@ void main() {
         expect(value.fontSize, first.fontSize, reason: key);
         expect(value.fontVariations, first.fontVariations, reason: key);
         expect(value.color, first.color, reason: key);
+        expect(TypeScale.isInverse(value), TypeScale.isInverse(first), reason: key);
         expect(tops[key], logHeadingPadding.top, reason: key);
       }
     });

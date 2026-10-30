@@ -164,28 +164,38 @@ void main() {
         ),
       ));
       await t.pump();
-      return t.renderObject<RenderParagraph>(find.text('Low tide')).text.style!.color;
+      return _haloOf(t);
     }
 
     testWidgets('pale ink on deep blue by day, dark on lit cloud', (t) async {
-      expect(await captionInk(t, probe: flat(const Color(0xFF0E2139))), CaptionInk.pale.color);
+      expect(await captionInk(t, probe: flat(const Color(0xFF0E2139))), _halo(CaptionInk.pale));
       await t.pumpWidget(const SizedBox());
-      expect(await captionInk(t, probe: flat(const Color(0xFF919FA6)), ink: CaptionInk.pale), CaptionInk.dark.color);
+      expect(await captionInk(t, probe: flat(const Color(0xFF919FA6)), ink: CaptionInk.pale), _halo(CaptionInk.dark));
     });
 
     testWidgets('no look at the sky, or not following it: the given ink', (t) async {
-      expect(await captionInk(t), CaptionInk.dark.color);
+      expect(await captionInk(t), _halo(CaptionInk.dark));
       await t.pumpWidget(const SizedBox());
-      expect(await captionInk(t, probe: flat(const Color(0xFF0E2139)), follow: false), CaptionInk.dark.color);
+      expect(await captionInk(t, probe: flat(const Color(0xFF0E2139)), follow: false), _halo(CaptionInk.dark));
     });
 
     testWidgets('a later sky change eases to the other ink', (t) async {
-      expect(await captionInk(t, probe: flat(const Color(0xFF0E2139))), CaptionInk.pale.color);
+      expect(await captionInk(t, probe: flat(const Color(0xFF0E2139))), _halo(CaptionInk.pale));
       await captionInk(t, probe: flat(const Color(0xFFB9C2C8)));
       await t.pump(const Duration(seconds: 2));
-      expect(t.renderObject<RenderParagraph>(find.text('Low tide')).text.style!.color, CaptionInk.dark.color);
+      expect(_haloOf(t), _halo(CaptionInk.dark));
     });
   });
 }
+
+/// The caption's text is inverse-colour (TypeScale.inverseText); the ink
+/// the sky chose shows in its halo, so the halo colour is what is read.
+Color? _haloOf(WidgetTester t) {
+  final style = t.renderObject<RenderParagraph>(find.text('Low tide')).text.style!;
+  expect(TypeScale.isInverse(style), isTrue);
+  return style.shadows!.first.color;
+}
+
+Color _halo(CaptionInk ink) => ink.shadows.first.color;
 
 String _hex(Color c) => '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';

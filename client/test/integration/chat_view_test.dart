@@ -127,7 +127,7 @@ void main() {
     expect(send.right, lessThanOrEqualTo(360 - ChatComposer.gutter));
   });
 
-  testWidgets('two voices: the reply in the serif and ink, your line and the hint in the sans and ink2', (t) async {
+  testWidgets('two voices: the reply in the serif, your line and the hint in the sans, all inverse-colour', (t) async {
     t.view.physicalSize = const Size(360, 800);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
@@ -139,11 +139,13 @@ void main() {
     await t.pump();
     final p = Palette.night;
     final reply = t.widget<Text>(find.text('Synthetic reply.')).style!;
-    expect((reply.fontFamily, reply.color), (Fonts.serif, p.ink));
+    expect((reply.fontFamily, TypeScale.isInverse(reply)), (Fonts.serif, true));
     final echo = t.widget<Text>(find.text('Synthetic question?')).style!;
-    expect((echo.fontFamily, echo.color), (Fonts.sans, p.ink2));
+    expect((echo.fontFamily, TypeScale.isInverse(echo)), (Fonts.sans, true));
     final hint = t.widget<Text>(find.text(ChatComposer.hint)).style!;
-    expect((hint.fontFamily, hint.color), (Fonts.sans, p.ink2));
+    expect((hint.fontFamily, TypeScale.isInverse(hint)), (Fonts.sans, true));
+    final typed = t.widget<EditableText>(find.byType(EditableText)).style;
+    expect((typed.fontFamily, TypeScale.isInverse(typed)), (Fonts.sans, true));
     // No SkyLight here: no plate (since 2026-10-29), and with no look at
     // the sky the text carries the full halo (test/ui/halo_test.dart checks
     // what it does over the sky sampled on the phone).
@@ -163,8 +165,15 @@ void main() {
             palette: Palette.day,
             child: Stack(children: [Positioned.fill(child: ChatComposer(thread: thread, onSubmit: (_) {}))]))));
     await t.pump();
-    expect(t.widget<Text>(find.text('Synthetic reply.')).style!.color, Palette.day.ink);
-    expect(t.widget<Text>(find.text(ChatComposer.hint)).style!.color, Palette.day.ink2);
+    // The text is inverse-colour; the day palette shows in the halo and
+    // the cursor.
+    for (final s in ['Synthetic reply.', ChatComposer.hint]) {
+      final style = t.renderObject<RenderParagraph>(find.text(s)).text.style!;
+      expect(TypeScale.isInverse(style), isTrue, reason: s);
+    }
+    final reply = t.renderObject<RenderParagraph>(find.text('Synthetic reply.')).text.style!;
+    expect(reply.shadows!.first.color.withValues(alpha: 1), Palette.day.halo.withValues(alpha: 1));
+    expect(t.widget<EditableText>(find.byType(EditableText)).cursorColor, Palette.day.accent);
   });
 
   group('the reply fits without scrolling or clipping', () {

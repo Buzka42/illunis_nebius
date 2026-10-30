@@ -166,6 +166,9 @@ abstract final class CheckInPrompt {
   static const ask = 'One quick question: from one to five, how are your mood, your energy, '
       'and your sleep last night?';
   static const reask = 'Please say three numbers from one to five, for mood, energy and sleep.';
+
+  /// [reask] with typed wording (voice off).
+  static const typedReask = 'Please type three numbers from one to five, for mood, energy and sleep.';
   static const declined = 'All right.';
   static const gaveUp = 'No problem, we can try again tomorrow.';
   static String saved(CheckIn c) {
@@ -185,6 +188,7 @@ class CheckInSession {
     required this.checkIns,
     required this.speak,
     this.listen,
+    this.typed = false,
     DateTime Function()? clock,
     void Function(String line)? log,
   })  : _clock = clock ?? DateTime.now,
@@ -193,6 +197,9 @@ class CheckInSession {
   final CheckInStore checkIns;
   final Future<void> Function(String text) speak;
   final void Function()? listen;
+
+  /// Typed wording (voice off): the re-ask says "type" instead of "say".
+  final bool typed;
   final DateTime Function() _clock;
   final void Function(String) _log;
 
@@ -246,7 +253,7 @@ class CheckInSession {
         }
         _reasked = true;
         _log('checkin: reask');
-        await speak(CheckInPrompt.reask);
+        await speak(typed ? CheckInPrompt.typedReask : CheckInPrompt.reask);
         if (asking) listen?.call();
         return;
       }

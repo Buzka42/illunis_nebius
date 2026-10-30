@@ -69,11 +69,17 @@ void main() {
     await pumpPanel(t, sky: (c) => SkyLight(daylight: 0, palette: Palette.night, probe: edge, child: c));
     expect(darkOf(t), isFalse);
     expect(haloOf(t), greaterThan(0.5));
-    // Moonlight behind the whole panel: dark ink reads on it bare.
+    // Moonlight behind the whole panel: the day palette and its light halo.
+    // Inverse text reads on the moon itself bare, but the probe's soft edge
+    // into the night is a mid-tone, whose inverse is a mid-tone too, so a
+    // partial halo is solved for it (with fixed dark ink this was none).
     final moonlit = _probe((x, y) => y > 60 && y < 80 ? const Color(0xFFE0E0D8) : const Color(0xFF0B1630));
     await pumpPanel(t, sky: (c) => SkyLight(daylight: 0, palette: Palette.night, probe: moonlit, child: c));
     expect(darkOf(t), isTrue);
-    expect(haloOf(t), 0);
+    final (lo, hi) = moonlit.range(const Rect.fromLTWH(16, 500, 328, 120))!;
+    expect(solveHalo(Palette.day, [hi]), 0);
+    expect(haloOf(t), solveHalo(Palette.day, [lo, hi]));
+    expect(haloOf(t), inExclusiveRange(0, 1));
   });
 
   group('ink from the sky behind the panel', () {
@@ -171,10 +177,12 @@ void main() {
         final shape = w.customBorder as RoundedRectangleBorder;
         expect((shape.borderRadius as BorderRadius).topLeft.x, lessThan(Radii.maxFor(48)));
       }
-      // The primary cell is in the accent, the other in ink, both in label type.
-      expect(t.widget<Text>(find.text('Yes')).style!.color, Palette.night.accent);
-      expect(t.widget<Text>(find.text('No')).style!.color, Palette.night.ink);
-      expect(t.widget<Text>(find.text('No')).style!.fontFamily, Fonts.sans);
+      // Both cells in label type and inverse colour, readable over any sky the way the reply is.
+      for (final word in ['Yes', 'No']) {
+        final style = t.widget<Text>(find.text(word)).style!;
+        expect(TypeScale.isInverse(style), isTrue, reason: word);
+        expect((style.fontFamily, style.fontSize), (Fonts.sans, 14), reason: word);
+      }
       expect(find.byType(GlassPanel), findsNothing);
     });
   });
@@ -195,10 +203,15 @@ void main() {
       return sent;
     }
 
-    testWidgets('hint in ink2, body type, a rule baseline, the send glyph', (t) async {
+    testWidgets('text and hint in inverse colour, body type, a rule baseline, the send glyph', (t) async {
       await pumpField(t);
       final field = t.widget<TextField>(find.byKey(const ValueKey('f')));
-      expect(field.decoration!.hintStyle!.color, Palette.night.ink2);
+      expect(TypeScale.isInverse(field.decoration!.hintStyle), isTrue);
+      expect(TypeScale.isInverse(field.style), isTrue);
+      // What is drawn: the hint and the editable text, after Material's merges.
+      expect(TypeScale.isInverse(t.widget<Text>(find.text('Write to Illunis')).style), isTrue);
+      expect(TypeScale.isInverse(t.widget<EditableText>(find.byType(EditableText)).style), isTrue);
+      expect(field.cursorColor, Palette.night.accent);
       expect(field.style!.fontSize, 16);
       expect(field.style!.fontFamily, Fonts.sans);
       expect(field.minLines, 1);
@@ -258,7 +271,7 @@ void main() {
     expect(find.byType(GlassPanel), findsOneWidget);
     expect(t.widget<GlassPanel>(find.byType(GlassPanel)).borderRadius, GlassSheet.radius);
     final title = t.widget<Text>(find.text('Food')).style!;
-    expect((title.fontFamily, title.fontSize, title.color), (Fonts.serif, 28, Palette.day.ink));
+    expect((title.fontFamily, title.fontSize, TypeScale.isInverse(title)), (Fonts.serif, 28, true));
     final close = t.getRect(find.byKey(const ValueKey('close')));
     expect(close.height, greaterThanOrEqualTo(48));
     expect(close.width, greaterThanOrEqualTo(48));

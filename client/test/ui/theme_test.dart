@@ -34,7 +34,8 @@ void main() {
     await t.pump(const Duration(milliseconds: 300));
     final rich = t.widgetList<RichText>(find.byType(RichText)).firstWhere((r) => r.text.toPlainText() == 'Send');
     expect(rich.text.style?.fontFamily, Fonts.sans);
-    expect(rich.text.style?.color, Palette.night.ink);
+    // Inverse-colour text, over the glass colour of the tooltip.
+    expect(TypeScale.isInverse(rich.text.style), isTrue);
   });
 
   test('buttons use the small control radius and no splash', () {

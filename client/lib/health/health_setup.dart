@@ -2,7 +2,8 @@
 /// earlier setup questions, and again whenever the user says "connect
 /// Health Connect" or "read my health data". "Yes" opens the system sheet;
 /// anything else, or a no, leaves it off. The asked flag lives under
-/// [StoreKeys.healthAsked], so the question is not repeated.
+/// [StoreKeys.healthAsked], so the question is not repeated. With
+/// [HealthSetup.typed] (voice off) the prompts say "type" instead of "say".
 ///
 /// Logs carry codes only.
 library;
@@ -30,6 +31,18 @@ abstract final class HealthPrompt {
   static const update = 'Health Connect needs an update from the Play Store first.';
 }
 
+/// Typed prompts (voice off) where the spoken ones say "say"; the rest of
+/// [HealthPrompt] is shared.
+abstract final class TypedHealthPrompt {
+  static const offer = 'I can read your sleep, steps and heart rate from Health Connect, '
+      'to look for patterns over three weeks. They stay on this phone; only daily totals go '
+      'to Illunis when you ask for the three-week analysis. Shall I ask Android for access? '
+      'Type yes or no.';
+  static const reask = 'Please type yes or no.';
+  static const denied = 'All right, I will not read Health Connect. Type connect Health Connect any time.';
+  static const declined = 'All right. Type connect Health Connect if you change your mind.';
+}
+
 final _intent = RegExp(
     r'^(?:please )?(?:connect|use|link|turn on|enable|allow)(?: to)? (?:my )?(?:health connect|health data|health)'
     r'|^(?:please )?read my (?:health|sleep|steps|heart rate)(?: data)?');
@@ -44,6 +57,7 @@ class HealthSetup {
     required this.speak,
     this.listen,
     bool Function()? ready,
+    this.typed = false,
     void Function(String line)? log,
   })  : _ready = ready ?? (() => true),
         _log = log ?? debugPrint;
@@ -53,6 +67,9 @@ class HealthSetup {
   final Future<void> Function(String text) speak;
   final void Function()? listen;
   final bool Function() _ready;
+
+  /// Typed wording (voice off): see the library comment.
+  final bool typed;
   final void Function(String) _log;
 
   bool _asked = false;
@@ -107,7 +124,7 @@ class HealthSetup {
 
   Future<void> _begin() async {
     _asking = true;
-    await speak(HealthPrompt.offer);
+    await speak(typed ? TypedHealthPrompt.offer : HealthPrompt.offer);
     if (_asking) listen?.call();
   }
 
@@ -115,7 +132,7 @@ class HealthSetup {
     final a = parseConfirm(text);
     if (a == null) {
       _log('health: reask');
-      await speak(HealthPrompt.reask);
+      await speak(typed ? TypedHealthPrompt.reask : HealthPrompt.reask);
       if (_asking) listen?.call();
       return;
     }
@@ -123,7 +140,7 @@ class HealthSetup {
     await _markAsked();
     if (!a.yes) {
       _log('health: declined');
-      return speak(HealthPrompt.declined);
+      return speak(typed ? TypedHealthPrompt.declined : HealthPrompt.declined);
     }
     await speak(HealthPrompt.sheet);
     final r = await port.requestPermissions();
@@ -131,7 +148,7 @@ class HealthSetup {
     await speak(switch (r) {
       HealthPermission.granted => HealthPrompt.granted,
       HealthPermission.partial => HealthPrompt.partial,
-      HealthPermission.denied => HealthPrompt.denied,
+      HealthPermission.denied => typed ? TypedHealthPrompt.denied : HealthPrompt.denied,
       HealthPermission.unavailable => HealthPrompt.unavailable,
     });
   }

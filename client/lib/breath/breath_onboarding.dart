@@ -281,7 +281,7 @@ class BreathFlow extends ChangeNotifier {
       case BreathRefusal.referenceOnly:
         _go(BreathNotice('${t.copy.intent} ${t.copy.end}', notice: t.copy.notice));
       case BreathRefusal.advancedOnly:
-        _go(BreathNotice('${t.name} is an advanced technique. It is offered only if you said in setup that you '
+        _go(BreathNotice('${t.name} is an advanced technique. It is offered only if you answered in setup that you '
             'practise breathwork at an advanced level.'));
       case BreathRefusal.unavailable:
         _go(BreathNotice('${t.name} is in the library, but it cannot be guided in this app.',

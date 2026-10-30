@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:illunis_client/app/persistence.dart';
 import 'package:illunis_client/app/view_offer.dart';
@@ -142,7 +143,7 @@ void main() {
         final tag = find.descendant(of: holotropic, matching: find.text('advanced'));
         expect(tag, findsOneWidget);
         expect(t.widget<Text>(tag).style!.fontSize, TypeScale.note(Palette.night.ink2).fontSize);
-        expect(t.widget<Text>(tag).style!.color, Palette.night.ink2);
+        expect(TypeScale.isInverse(t.widget<Text>(tag).style), isTrue);
       });
 
       testWidgets('a session, paused, then stopped, fits', (t) async {
@@ -339,8 +340,11 @@ void main() {
       ));
       await t.pump();
       await t.pump();
-      expect(t.widget<Text>(find.text('Continue?')).style!.color, Palette.day.ink);
-      expect(t.widget<Text>(find.text(introText)).style!.color, Palette.day.ink);
+      for (final s in ['Continue?', introText]) {
+        final style = t.renderObject<RenderParagraph>(find.text(s)).text.style!;
+        expect(TypeScale.isInverse(style), isTrue, reason: s);
+        expect(style.shadows!.first.color.withValues(alpha: 1), Palette.day.halo.withValues(alpha: 1), reason: s);
+      }
     });
 
     testWidgets('the pacer is a ring: the centre stays transparent', (t) async {

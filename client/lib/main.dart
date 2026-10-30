@@ -253,6 +253,7 @@ Future<void> main() async {
     listen: listenAfterPrompt,
     ready: phraseSettled,
     assistantAvailable: () => server is HttpServerPort,
+    typed: !voiceEnabled,
   );
   await memoryMode.load();
   final healthPort = ChannelHealthPort();
@@ -262,11 +263,13 @@ Future<void> main() async {
     speak: flow.tts.speak,
     listen: listenAfterPrompt,
     ready: () => phraseSettled() && memoryMode.chosen && !memoryMode.asking,
+    typed: !voiceEnabled,
   );
   await health.load();
   // One check-in question (mood, energy, sleep, 1 to 5) after the digest.
   final checkInStore = CheckInStore(store);
-  final checkIn = CheckInSession(checkIns: checkInStore, speak: flow.tts.speak, listen: listenAfterPrompt);
+  final checkIn = CheckInSession(
+      checkIns: checkInStore, speak: flow.tts.speak, listen: listenAfterPrompt, typed: !voiceEnabled);
   flow.afterDigest = checkIn.ask;
 
   // Council and assistant (docs/DESIGN.md). All of

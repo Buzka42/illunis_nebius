@@ -1,8 +1,9 @@
 /// A row of equal text actions (Yes / No, Save, Keep mine / Use, Pause /
 /// Stop): cells at least 48 px tall in label type, split by faint
 /// hairlines, with no shape of their own. They sit on the sky, with the
-/// halo of the [GlassPanel] they are in. The primary cell is in the accent,
-/// the others in ink. A press shows an 8 % ink veil, no ripple.
+/// halo of the [GlassPanel] they are in. The words are inverse-colour text
+/// like the reply ([TypeScale.inverseText]), so the primary cell and the
+/// others look alike. A press shows an 8 % ink veil, no ripple.
 library;
 
 import 'package:flutter/material.dart';

@@ -5,8 +5,10 @@
 /// glyph stays at the bottom, above the keyboard. Sending closes the
 /// keyboard so the reply gets the sky.
 ///
-/// Inks and glass come from SkyLight: pale on the night sky, dark on the
-/// day sky, the glass only as thick as 4.5:1 needs over the sky behind it.
+/// The reply, your line, the input text and its hint are inverse-colour
+/// text ([TypeScale.inverseText]): each stroke shows the opposite of the sky
+/// under it. SkyLight gives the halo (light by day, dark by night) only as
+/// strong as 4.5:1 needs over the sky behind it, and the cursor and glyphs.
 /// Offers ("Open your logs?") carry Yes and No that submit the same words a
 /// typed answer would. Shown whatever the fog setting is.
 library;
